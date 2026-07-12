@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { animateRig, buildMaterialWorld, createRiggedActor } from './render/assetRigs';
 import { CIVILIZATIONS, byId } from './simulation/catalog';
 import type { Civilization, CivilizationId } from './simulation/types';
 import './styles.css';
@@ -213,5 +214,24 @@ class RealmGame {
 
 function seeded(seed: number): () => number { let state = seed >>> 0; return () => { state += 0x6D2B79F5; let t = state; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function roman(number: number): string { const values: [number, string][] = [[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']]; return values.reduce((result, [value, symbol]) => { while (number >= value) { result += symbol; number -= value; } return result; }, ''); }
+
+const realmPrototype = RealmGame.prototype as unknown as Record<string, unknown>;
+const originalUpdate = realmPrototype.update as (this: RealmGame, dt: number) => void;
+realmPrototype.world = function worldOverride(this: RealmGame): void {
+  const instance = this as unknown as { scene: THREE.Scene; decor: THREE.Group; civ: Civilization };
+  buildMaterialWorld(instance);
+};
+realmPrototype.createActor = function actorOverride(this: RealmGame, primary: string, glow: string, player = false): THREE.Group {
+  const instance = this as unknown as { civ: Civilization };
+  const identity = player ? instance.civ : CIVILIZATIONS.find((item) => item.palette.primary === primary) ?? instance.civ;
+  return createRiggedActor({ ...identity, palette: { ...identity.palette, primary, glow } }, player);
+};
+realmPrototype.update = function updateOverride(this: RealmGame, dt: number): void {
+  originalUpdate.call(this, dt);
+  const instance = this as unknown as { player: THREE.Group; playerVelocity: THREE.Vector3; enemies: Array<{ mesh: THREE.Group }>; allies: Array<{ mesh: THREE.Group }>; animation: number };
+  animateRig(instance.player, instance.animation, instance.playerVelocity?.length?.() ?? 1);
+  instance.enemies.forEach((enemy) => animateRig(enemy.mesh, instance.animation, 1.25));
+  instance.allies.forEach((ally) => animateRig(ally.mesh, instance.animation, 1.15));
+};
 
 renderTitle();
