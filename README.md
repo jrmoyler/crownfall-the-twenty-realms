@@ -15,7 +15,9 @@ Open `dist/index.html` through a local static server, then:
 
 - `src/simulation/catalog.ts` — all 20 active civilizations, personalities, maps, abilities, elites and visual palettes.
 - `src/main.ts` — game screens, Three.js battlefield, combat loop, tactical summons, campaign/survival logic and local progress.
-- `src/render/` — atlas-sliced rulers/props, authored rig states, seeded material worlds, pooled combat VFX and the adaptive cinematic image pipeline.
+- `src/render/characterRig.ts` — procedural articulated character rigs (jointed arms/legs/spine/head, per-civilization weapons) with idle/walk/attack/cast/hit/summon animation states.
+- `src/render/environment.ts` — seeded 3D realm environments: noise-displaced terrain with a mountain rim, gradient/eclipse skydome, biome props, ruined pillars, waving banners and the central shrine.
+- `src/render/` also holds pooled combat VFX and the adaptive cinematic image pipeline.
 - `android/` and `ios/` — Capacitor-native projects with branded icons and splash screens.
 - `src/styles.css` — desktop/mobile game UI.
 - `public/assets/` — original generated title and civilization/terrain art used locally by the game.
