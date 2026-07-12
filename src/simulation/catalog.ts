@@ -1,0 +1,32 @@
+import type { Civilization } from './types';
+
+const create = (
+  index: number, id: Civilization['id'], name: string, ruler: string, title: string,
+  primary: string, glow: string, ground: string, biome: string, doctrine: string,
+  weapon: string, elite: string, enemy: string, abilities: Civilization['abilities'], difficulty: number,
+): Civilization => ({ index, id, name, ruler, title, palette: { primary, glow, ground, accent: '#f7df9a' }, biome, doctrine, weapon, elite, enemy, abilities, seed: 9173 + index * 743, difficulty });
+
+export const CIVILIZATIONS: readonly Civilization[] = [
+  create(1, 'zenflow', 'ZenFlow', 'Asterion Vale', 'Oracle-King', '#7154e8', '#b394ff', '#17112e', 'Astral Observatory', 'Foresight wards and echo strikes', 'Chrono staff', 'Lattice Sentinel', 'Paradox Raider', ['Echo Lance', 'Probability Veil', 'Lattice Call', 'Singularity'], 3),
+  create(2, 'collective', 'The Collective', 'Caelum Rhys', 'Sovereign Architect', '#d5a638', '#ffe59a', '#292012', 'Golden Basilica', 'Banners unite disciplined warbands', 'Architect blade', 'Guild Phalanx', 'Fracture Captain', ['Golden Arc', 'Rally Standard', 'Citadel Guard', 'Unified Dawn'], 2),
+  create(3, 'hybrid-living', 'Hybrid Living', 'Liora Aven', 'Scholar-Queen', '#4e8ce2', '#9ed0ff', '#12233d', 'Academy Terraces', 'Adaptive shields learn from harm', 'Scepter of lessons', 'Lore Warden', 'Dropout Stalker', ['Lesson Bolt', 'Adaptive Ward', 'Study Circle', 'Graduation Ray'], 2),
+  create(4, 'nexus-labs', 'Nexus Labs', 'Rook Marcell', 'Crimson Showmaster', '#bd423c', '#ff8878', '#331315', 'Ember Amphitheater', 'Spectacle turns into explosive momentum', 'Pyre baton', 'Stage Blade', 'Curtain Reaver', ['Flare Cut', 'Mirror Cast', 'Encore Guard', 'Finale'], 3),
+  create(5, 'terra-axis', 'Terra Axis', 'Sahra Kemet', 'City Empress', '#b7603e', '#ffb08a', '#34201a', 'Copper Citadel Ravines', 'Terrain bends to imperial will', 'Surveyor spear', 'Stone Surveyor', 'Fault Marauder', ['Survey Strike', 'Rampart Rise', 'Quake Mine', 'Axis Break'], 3),
+  create(6, 'vital-helix', 'Vital Helix', 'Nami Seraph', 'Gene-Seer', '#1b9e9a', '#7cf2d8', '#102d2d', 'Healing Wetlands', 'Life threads renew allies and poison foes', 'Helix staff', 'Helix Medic', 'Blight Carrier', ['Spore Dart', 'Mend Thread', 'Bloom Pod', 'Genome Storm'], 2),
+  create(7, 'binary-loom', 'Binary Loom', 'Tarin Hex', 'Code Regent', '#a8bb3d', '#e8ff88', '#202915', 'Circuit Gardens', 'Linked constructs distribute every blow', 'Loom glaive', 'Loom Construct', 'Null Hacker', ['Bit Cleave', 'Link Shield', 'Compile Golem', 'Zero Day'], 3),
+  create(8, 'gaia-synthesis', 'Gaia Synthesis', 'Elder Briar', 'Verdant Warden', '#527d35', '#a6e96a', '#142916', 'Ancient Canopy Basin', 'Roots heal allies and restrain enemies', 'Thorn staff', 'Grove Guardian', 'Ash Ravager', ['Thorn Lash', 'Root Snare', 'Grove Call', 'Verdant Reckoning'], 2),
+  create(9, 'animus-prime', 'Animus Prime', 'Kairo-9', 'Steel Titan', '#25bdd5', '#92f4ff', '#102d35', 'Cyan Forge Basin', 'Mechanical companions amplify direct impact', 'Ion hammer', 'Prime Automaton', 'Scrap Devourer', ['Ion Slam', 'Magnet Ward', 'Drone Spear', 'Prime Protocol'], 4),
+  create(10, 'aether-link', 'Aether Link', 'Ilyra Vox', 'Signal Matriarch', '#d58237', '#ffd18b', '#351d11', 'Beacon Desert', 'Commands travel as lightning through allies', 'Relay staff', 'Relay Rider', 'Static Hunter', ['Signal Chain', 'Phase Step', 'Beacon Call', 'Skyline Burst'], 3),
+  create(11, 'obsidian-arc', 'Obsidian Arc', 'Veyr Noct', 'Black-Eye Warlord', '#9b2e53', '#ff7eab', '#250d1a', 'Obsidian Breach Fortress', 'Fear and counterattacks break siege lines', 'Shadow sabre', 'Arc Stalker', 'Panic Warden', ['Night Cut', 'Dread Veil', 'Stalker Pack', 'Black Sun'], 4),
+  create(12, 'kinetic-edge', 'Kinetic Edge', 'Dax Merrow', 'Arena Champion', '#6ea73d', '#d7ff87', '#1c2f15', 'Emerald Sun Arena', 'Perfect parries build devastating speed', 'Momentum blades', 'Velocity Runner', 'Anchor Brute', ['Dash Cut', 'Parry Pulse', 'Runner Surge', 'Overdrive'], 3),
+  create(13, 'civic-core', 'Civic Core', 'Amara Sol', 'Dove Emissary', '#ba7893', '#ffc7de', '#321b2b', 'Rose Civic Gardens', 'Protection makes every ally stronger', 'Harmony mace', 'Peacekeeper', 'Discord Agent', ['Peace Wave', 'Safe Haven', 'Civic Rally', 'Common Light'], 1),
+  create(14, 'quantum-ledger', 'Quantum Ledger', 'Marius Quill', 'Balance Magister', '#a8a6b1', '#f6f4ff', '#27262c', 'Silver Vault Catacombs', 'Marks convert danger into stored power', 'Scale sceptre', 'Ledger Warden', 'Debt Collector', ['Debit Ray', 'Audit Shield', 'Balance Guard', 'Market Collapse'], 3),
+  create(15, 'signal-velocity', 'Signal Velocity', 'Vera Pyre', 'Flame Herald', '#d4514f', '#ffaaa0', '#381517', 'Scarlet Signal Mesas', 'Tempo turns critical hits into avalanches', 'Broadcast lance', 'Broadcast Raider', 'Silence Monk', ['Pulse Shot', 'Hype Field', 'Flash Mob', 'Viral Inferno'], 3),
+  create(16, 'juris-guard', 'Juris Guard', 'Aurelius Kane', 'Ivory Justiciar', '#d3c6ad', '#fff0cf', '#302b25', 'Marble Tribunal Ruins', 'Judgments bind and expose lawbreakers', 'Oath blade', 'Oath Knight', 'Contempt Wraith', ['Verdict', 'Oath Wall', 'Knight Order', 'Final Appeal'], 2),
+  create(17, 'cognara-mind', 'Cognara Mind', 'Mira Nyx', 'Mindweaver', '#a24663', '#ff9bc4', '#31121f', 'Memory Forest', 'Perception bends opponents against themselves', 'Thought rod', 'Thought Scribe', 'Nightmare Host', ['Mind Spike', 'Fear Mirror', 'Scribe Chorus', 'Ego Eclipse'], 4),
+  create(18, 'vector-shift', 'Vector Shift', 'Bramm Iron', 'Iron Marshal', '#8e6f60', '#ffc19b', '#2b211e', 'Storm Foundry Plateau', 'Heavy force and artillery dominate zones', 'Forge maul', 'Forge Breaker', 'Shrapnel Wolf', ['Impact Blow', 'Iron Skin', 'Battery Line', 'Foundry Fall'], 4),
+  create(19, 'nomad-nexus', 'Nomad Nexus', 'Sef Kadar', 'Horizon Cartographer', '#b48a4f', '#ffe19b', '#332414', 'Caravan Sea', 'Mobility reveals paths and caches', 'Compass scimitar', 'Dune Rover', 'Mirage Raider', ['Compass Cut', 'Caravan Dash', 'Scout Circle', 'Horizon Storm'], 2),
+  create(20, 'eon-core', 'Eon Core', 'Orun Aeon', 'Chronarch Elder', '#b9a677', '#fff0ad', '#322d1d', 'Infinity Ruins', 'Delayed impacts mature into absolute force', 'Epoch staff', 'Epoch Keeper', 'Moment Eater', ['Epoch Mark', 'Stillness Ward', 'Keeper Call', 'Last Horizon'], 4),
+];
+
+export const byId = (id: Civilization['id']) => CIVILIZATIONS.find((civilization) => civilization.id === id) ?? CIVILIZATIONS[0];
