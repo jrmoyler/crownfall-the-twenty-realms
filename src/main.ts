@@ -1,5 +1,8 @@
 import * as THREE from 'three';
+import { RealmAudio } from './audio/realmAudio';
 import { animateLivingWorld, animateRig, buildMaterialWorld, createRiggedActor, setRigState } from './render/assetRigs';
+import { BattlefieldVfx } from './render/battlefieldVfx';
+import { CinematicPipeline } from './render/cinematicPipeline';
 import { CIVILIZATIONS, byId } from './simulation/catalog';
 import type { Civilization, CivilizationId } from './simulation/types';
 import './styles.css';
@@ -133,6 +136,9 @@ type RunResult = { victory: boolean; wave: number; kills: number; score: number;
 
 class RealmGame {
   private readonly renderer: THREE.WebGLRenderer;
+  private readonly pipeline: CinematicPipeline;
+  private readonly vfx: BattlefieldVfx;
+  private readonly audio = new RealmAudio(() => profile.muted);
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(48, 1, .1, 100);
   private readonly clock = new THREE.Clock();
@@ -157,8 +163,9 @@ class RealmGame {
   private readonly resize = () => this.fit();
   constructor(private readonly canvas: HTMLCanvasElement, private readonly civ: Civilization, private readonly mode: Mode, private readonly onEnd: (result: RunResult) => void) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); this.renderer.shadowMap.enabled = !profile.reducedMotion; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.45 : 2)); this.renderer.shadowMap.enabled = !profile.reducedMotion; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.1; this.scene.fog = new THREE.FogExp2(civ.palette.ground, .035);
+    this.pipeline = new CinematicPipeline(this.renderer, this.scene, this.camera); this.vfx = new BattlefieldVfx(this.scene);
     this.camera.position.set(0, 14, 15); this.camera.lookAt(0, 0, 0); this.scene.add(this.decor);
     this.world(); this.player = this.createActor(civ.palette.primary, civ.palette.glow, true); this.player.position.set(0, 0, 0); this.scene.add(this.player);
     this.fit(); window.addEventListener('resize', this.resize); window.addEventListener('keydown', this.keyDown); window.addEventListener('keyup', this.keyUp); canvas.addEventListener('pointermove', this.movePointer); canvas.addEventListener('pointerdown', this.pointerDown); this.canvas.style.touchAction = 'none';
@@ -182,18 +189,18 @@ class RealmGame {
   private spawnEnemy(rival: Civilization, boss: boolean): void { const a = Math.random() * Math.PI * 2; const r = 13 + Math.random() * 2; const mesh = this.createActor(rival.palette.primary, rival.palette.glow); mesh.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); mesh.scale.setScalar(boss ? 1.7 : .86 + Math.random() * .18); this.scene.add(mesh); this.enemies.push({ mesh, hp: boss ? 230 + this.wave * 20 : 42 + this.wave * 8, max: boss ? 230 + this.wave * 20 : 42 + this.wave * 8, speed: boss ? 1.12 : 1.35 + Math.random() * .38, damage: boss ? 16 : 6, boss, hit: 0, phase: 0 }); }
   private onPointer(event: PointerEvent): void { const rect = this.canvas.getBoundingClientRect(); this.pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1); this.raycaster.setFromCamera(this.pointer, this.camera); this.raycaster.ray.intersectPlane(this.ground, this.target); }
   private onKey(event: KeyboardEvent, down: boolean): void { const key = event.key.toLowerCase(); if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','q','e','r','f','c','escape'].includes(key)) event.preventDefault(); if (down) { if (key === ' ') this.dodge(); if (key === 'q') this.ability(0); if (key === 'e') this.ability(1); if (key === 'r') this.ability(2); if (key === 'f') this.ability(3); if (key === 'c') this.ability(4); if (key === 'escape') this.togglePause(); } if (down) this.keys.add(key); else this.keys.delete(key); }
-  attack(): void { if (this.paused || this.attackCooldown > 0 || this.ended) return; this.attackCooldown = .33; this.pulse(2.1, 18 + this.command * .05, this.civ.palette.glow); this.enemies.forEach((enemy) => { if (enemy.mesh.position.distanceTo(this.player.position) < 2.45) this.damage(enemy, 18 + Math.random() * 8); }); this.feed('Crown strike.'); }
+  attack(): void { if (this.paused || this.attackCooldown > 0 || this.ended) return; this.attackCooldown = .33; setRigState(this.player, 'attack', this.animation, .34); this.audio.cue('strike'); this.pulse(2.1, 18 + this.command * .05, this.civ.palette.glow); this.enemies.forEach((enemy) => { if (enemy.mesh.position.distanceTo(this.player.position) < 2.45) this.damage(enemy, 18 + Math.random() * 8); }); this.feed('Crown strike.'); }
   dodge(): void { if (this.paused || this.dodgeCooldown > 0 || this.stamina < 20) return; this.stamina -= 20; this.dodgeCooldown = .75; this.invulnerable = .3; const direction = this.playerVelocity.lengthSq() > .01 ? this.playerVelocity.clone().normalize() : this.target.clone().sub(this.player.position).setY(0).normalize(); this.player.position.addScaledVector(direction, 2.05); this.pulse(.95, 0, this.civ.palette.primary); }
-  ability(index: number): void { if (this.paused || this.ended || this.cooldowns[index] > 0) return; const cooldown = [5, 8, 13, 19, 15][index] ?? 10; this.cooldowns[index] = cooldown; if (index === 0) { this.pulse(3.2, 35, this.civ.palette.glow); }
+  ability(index: number): void { if (this.paused || this.ended || this.cooldowns[index] > 0) return; if (index === 4 && this.command < 30) { this.feed('Command energy required.'); return; } const cooldown = [5, 8, 13, 19, 15][index] ?? 10; this.cooldowns[index] = cooldown; setRigState(this.player, index === 4 ? 'summon' : 'cast', this.animation, index === 3 ? .9 : .62); this.audio.cue(index >= 2 ? 'summon' : 'cast'); if (index === 0) { this.pulse(3.2, 35, this.civ.palette.glow); }
     if (index === 1) { this.health = Math.min(100, this.health + 28); this.stamina = Math.min(100, this.stamina + 35); this.pulse(2.8, 0, '#ffffff'); this.feed('Ward restored vitality.'); }
     if (index === 2) { this.summon(3); this.pulse(4, 16, this.civ.palette.primary); }
     if (index === 3) { this.pulse(6.1, 75, this.civ.palette.glow); this.feed(`${this.civ.abilities[3]} unleashed.`); }
-    if (index === 4) { if (this.command < 30) { this.cooldowns[index] = 0; this.feed('Command energy required.'); return; } this.command -= 30; this.summon(5); this.feed(`${this.civ.elite} answer the call.`); }
+    if (index === 4) { this.command -= 30; this.summon(5); this.feed(`${this.civ.elite} answer the call.`); }
   }
   private summon(count: number): void { for (let i = 0; i < count; i += 1) { const ally = this.createActor(this.civ.palette.primary, this.civ.palette.glow); const a = (i / count) * Math.PI * 2; ally.position.copy(this.player.position).add(new THREE.Vector3(Math.cos(a), 0, Math.sin(a))); ally.scale.setScalar(.72); this.scene.add(ally); this.allies.push({ mesh: ally, ttl: 15 + Math.random() * 8, hit: 0 }); } }
-  private pulse(radius: number, damage: number, color: string): void { const mesh = new THREE.Mesh(new THREE.RingGeometry(.15, .25, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .9, side: THREE.DoubleSide })); mesh.rotateX(-Math.PI / 2); mesh.position.copy(this.player.position); mesh.position.y = .08; this.scene.add(mesh); this.pulses.push({ mesh, ttl: .65, max: radius }); if (damage > 0) this.enemies.forEach((enemy) => { if (enemy.mesh.position.distanceTo(this.player.position) < radius) this.damage(enemy, damage); }); }
+  private pulse(radius: number, damage: number, color: string): void { const mesh = new THREE.Mesh(new THREE.RingGeometry(.15, .25, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); mesh.rotateX(-Math.PI / 2); mesh.position.copy(this.player.position); mesh.position.y = .08; this.scene.add(mesh); this.pulses.push({ mesh, ttl: .65, max: radius }); this.vfx.burst(this.player.position, color, radius, Math.min(2.4, .45 + radius * .22)); if (damage > 0) this.enemies.forEach((enemy) => { if (enemy.mesh.position.distanceTo(this.player.position) < radius) this.damage(enemy, damage); }); }
   private damage(enemy: Enemy, amount: number): void { enemy.hp -= amount; enemy.hit = .16; if (enemy.hp <= 0) { this.scene.remove(enemy.mesh); this.enemies.splice(this.enemies.indexOf(enemy), 1); this.kills += 1; this.command = Math.min(100, this.command + (enemy.boss ? 35 : 5)); this.score += enemy.boss ? 1200 : 100 + this.wave * 15; this.feed(enemy.boss ? 'Warlord shattered!' : 'Rival defeated.'); } }
-  private tick = (): void => { if (this.disposed) return; const delta = Math.min(this.clock.getDelta(), .05); if (!this.paused && !this.ended) this.update(delta); this.renderer.render(this.scene, this.camera); requestAnimationFrame(this.tick); };
+  private tick = (): void => { if (this.disposed) return; const delta = Math.min(this.clock.getDelta(), .05); if (!this.paused && !this.ended) this.update(delta); this.vfx.update(delta); this.pipeline.render(delta); requestAnimationFrame(this.tick); };
   private update(dt: number): void { this.animation += dt; this.attackCooldown -= dt; this.dodgeCooldown -= dt; this.invulnerable -= dt; this.cooldowns.forEach((_, i) => { this.cooldowns[i] = Math.max(0, this.cooldowns[i] - dt); }); this.stamina = Math.min(100, this.stamina + dt * 13); this.command = Math.min(100, this.command + dt * (this.shrine > .65 ? 3 : .7));
     const movement = new THREE.Vector3((this.keys.has('d') || this.keys.has('arrowright') ? 1 : 0) - (this.keys.has('a') || this.keys.has('arrowleft') ? 1 : 0) + this.touchVector.x, 0, (this.keys.has('s') || this.keys.has('arrowdown') ? 1 : 0) - (this.keys.has('w') || this.keys.has('arrowup') ? 1 : 0) + this.touchVector.z); if (movement.lengthSq() > 0) movement.normalize(); this.playerVelocity.lerp(movement.multiplyScalar(5), 1 - Math.exp(-10 * dt)); this.player.position.addScaledVector(this.playerVelocity, dt); if (this.player.position.length() > 14.2) this.player.position.setLength(14.2); const facing = this.target.clone().sub(this.player.position).setY(0); if (facing.lengthSq() > .01) this.player.rotation.y = Math.atan2(facing.x, facing.z);
     this.player.position.y = Math.sin(this.animation * 2.5) * .04; this.camera.position.lerp(new THREE.Vector3(this.player.position.x * .33, 14, 15 + this.player.position.z * .33), .05); this.camera.lookAt(this.player.position.x * .3, 0, this.player.position.z * .3);
@@ -209,8 +216,8 @@ class RealmGame {
   setTouchVector(x: number, z: number): void { this.touchVector.set(x, 0, z); if (this.touchVector.lengthSq() > 1) this.touchVector.normalize(); }
   togglePause(): void { if (this.ended) return; this.paused = !this.paused; document.querySelector('#pause-overlay')?.classList.toggle('hidden', !this.paused); }
   private end(victory: boolean): void { if (this.ended) return; this.ended = true; setTimeout(() => this.onEnd({ victory, wave: this.wave, kills: this.kills, score: this.score + Math.floor(this.shrine * 500), shrine: this.shrine }), 650); }
-  private fit(): void { const width = this.canvas.clientWidth; const height = this.canvas.clientHeight; this.renderer.setSize(width, height, false); this.camera.aspect = width / Math.max(height, 1); this.camera.updateProjectionMatrix(); }
-  dispose(): void { this.ended = true; this.disposed = true; window.removeEventListener('resize', this.resize); window.removeEventListener('keydown', this.keyDown); window.removeEventListener('keyup', this.keyUp); this.canvas.removeEventListener('pointermove', this.movePointer); this.canvas.removeEventListener('pointerdown', this.pointerDown); this.renderer.dispose(); }
+  private fit(): void { const width = this.canvas.clientWidth; const height = this.canvas.clientHeight; this.renderer.setSize(width, height, false); this.pipeline.resize(width, height); this.camera.aspect = width / Math.max(height, 1); this.camera.updateProjectionMatrix(); }
+  dispose(): void { this.ended = true; this.disposed = true; window.removeEventListener('resize', this.resize); window.removeEventListener('keydown', this.keyDown); window.removeEventListener('keyup', this.keyUp); this.canvas.removeEventListener('pointermove', this.movePointer); this.canvas.removeEventListener('pointerdown', this.pointerDown); this.pipeline.dispose(); this.vfx.dispose(); this.audio.dispose(); this.renderer.dispose(); }
 }
 
 function seeded(seed: number): () => number { let state = seed >>> 0; return () => { state += 0x6D2B79F5; let t = state; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -218,8 +225,6 @@ function roman(number: number): string { const values: [number, string][] = [[10
 
 const realmPrototype = RealmGame.prototype as unknown as Record<string, unknown>;
 const originalUpdate = realmPrototype.update as (this: RealmGame, dt: number) => void;
-const originalAttack = realmPrototype.attack as (this: RealmGame) => void;
-const originalAbility = realmPrototype.ability as (this: RealmGame, index: number) => void;
 realmPrototype.world = function worldOverride(this: RealmGame): void {
   const instance = this as unknown as { scene: THREE.Scene; decor: THREE.Group; civ: Civilization };
   buildMaterialWorld(instance);
@@ -237,15 +242,4 @@ realmPrototype.update = function updateOverride(this: RealmGame, dt: number): vo
   instance.allies.forEach((ally) => { if (ally.hit > .5) setRigState(ally.mesh, 'attack', instance.animation, .3); animateRig(ally.mesh, instance.animation, 1); });
   animateLivingWorld(instance.decor, instance.animation, instance.enemies.length / 10);
 };
-realmPrototype.attack = function attackOverride(this: RealmGame): void {
-  const instance = this as unknown as { player: THREE.Group; animation: number };
-  setRigState(instance.player, 'attack', instance.animation, .34);
-  originalAttack.call(this);
-};
-realmPrototype.ability = function abilityOverride(this: RealmGame, index: number): void {
-  const instance = this as unknown as { player: THREE.Group; animation: number };
-  setRigState(instance.player, index === 4 ? 'summon' : 'cast', instance.animation, index === 3 ? .9 : .62);
-  originalAbility.call(this, index);
-};
-
 renderTitle();

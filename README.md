@@ -14,7 +14,9 @@ Open `dist/index.html` through a local static server, then:
 ## Structure
 
 - `src/simulation/catalog.ts` — all 20 active civilizations, personalities, maps, abilities, elites and visual palettes.
-- `src/main.ts` — game screens, Three.js 2.5D battlefield, combat loop, tactical summons, campaign/survival logic and local progress.
+- `src/main.ts` — game screens, Three.js battlefield, combat loop, tactical summons, campaign/survival logic and local progress.
+- `src/render/` — atlas-sliced rulers/props, authored rig states, seeded material worlds, pooled combat VFX and the adaptive cinematic image pipeline.
+- `android/` and `ios/` — Capacitor-native projects with branded icons and splash screens.
 - `src/styles.css` — desktop/mobile game UI.
 - `public/assets/` — original generated title and civilization/terrain art used locally by the game.
 - `dist/` — browser-ready production build.
@@ -32,3 +34,19 @@ For a production check:
 npm run build
 npm run test:run
 ```
+
+## Visual diagnostics
+
+- Add `?quality=cinematic`, `?quality=balanced`, or `?quality=battery` to force a rendering tier.
+- Press `P` during battle to toggle the no-post baseline used for visual regression checks.
+- Realm layouts, material variation, particles and environmental motion are seeded from each civilization's catalog entry.
+
+## Mobile builds
+
+```bash
+npm run mobile:sync
+npm run mobile:android
+npm run mobile:ios
+```
+
+Android release signing is completed in Android Studio. iOS archive/signing requires macOS, Xcode and an Apple Developer team; the generated Xcode project is ready for those credentials.

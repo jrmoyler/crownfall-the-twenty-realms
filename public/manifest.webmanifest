@@ -1,0 +1,14 @@
+{
+  "name": "Crownfall: The Twenty Realms",
+  "short_name": "Crownfall",
+  "description": "Twenty realms. One crown. A living ancient survival war.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#070813",
+  "theme_color": "#070813",
+  "icons": [
+    { "src": "/assets/app-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
