@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { animateRig, buildMaterialWorld, createRiggedActor } from './render/assetRigs';
+import { animateLivingWorld, animateRig, buildMaterialWorld, createRiggedActor, setRigState } from './render/assetRigs';
 import { CIVILIZATIONS, byId } from './simulation/catalog';
 import type { Civilization, CivilizationId } from './simulation/types';
 import './styles.css';
+import './polish.css';
 
 type Mode = 'campaign' | 'survival';
 type Screen = 'title' | 'select' | 'campaign' | 'codex' | 'settings' | 'battle' | 'results';
@@ -217,6 +218,8 @@ function roman(number: number): string { const values: [number, string][] = [[10
 
 const realmPrototype = RealmGame.prototype as unknown as Record<string, unknown>;
 const originalUpdate = realmPrototype.update as (this: RealmGame, dt: number) => void;
+const originalAttack = realmPrototype.attack as (this: RealmGame) => void;
+const originalAbility = realmPrototype.ability as (this: RealmGame, index: number) => void;
 realmPrototype.world = function worldOverride(this: RealmGame): void {
   const instance = this as unknown as { scene: THREE.Scene; decor: THREE.Group; civ: Civilization };
   buildMaterialWorld(instance);
@@ -228,10 +231,21 @@ realmPrototype.createActor = function actorOverride(this: RealmGame, primary: st
 };
 realmPrototype.update = function updateOverride(this: RealmGame, dt: number): void {
   originalUpdate.call(this, dt);
-  const instance = this as unknown as { player: THREE.Group; playerVelocity: THREE.Vector3; enemies: Array<{ mesh: THREE.Group }>; allies: Array<{ mesh: THREE.Group }>; animation: number };
-  animateRig(instance.player, instance.animation, instance.playerVelocity?.length?.() ?? 1);
-  instance.enemies.forEach((enemy) => animateRig(enemy.mesh, instance.animation, 1.25));
-  instance.allies.forEach((ally) => animateRig(ally.mesh, instance.animation, 1.15));
+  const instance = this as unknown as { player: THREE.Group; playerVelocity: THREE.Vector3; enemies: Array<{ mesh: THREE.Group; hit: number }>; allies: Array<{ mesh: THREE.Group; hit: number }>; animation: number; decor: THREE.Group };
+  animateRig(instance.player, instance.animation, instance.playerVelocity.length());
+  instance.enemies.forEach((enemy) => { if (enemy.hit > 0) setRigState(enemy.mesh, 'hit', instance.animation, .22); animateRig(enemy.mesh, instance.animation, 1.15); });
+  instance.allies.forEach((ally) => { if (ally.hit > .5) setRigState(ally.mesh, 'attack', instance.animation, .3); animateRig(ally.mesh, instance.animation, 1); });
+  animateLivingWorld(instance.decor, instance.animation, instance.enemies.length / 10);
+};
+realmPrototype.attack = function attackOverride(this: RealmGame): void {
+  const instance = this as unknown as { player: THREE.Group; animation: number };
+  setRigState(instance.player, 'attack', instance.animation, .34);
+  originalAttack.call(this);
+};
+realmPrototype.ability = function abilityOverride(this: RealmGame, index: number): void {
+  const instance = this as unknown as { player: THREE.Group; animation: number };
+  setRigState(instance.player, index === 4 ? 'summon' : 'cast', instance.animation, index === 3 ? .9 : .62);
+  originalAbility.call(this, index);
 };
 
 renderTitle();
