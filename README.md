@@ -8,16 +8,25 @@ Open `dist/index.html` through a local static server, then:
 
 - Choose any civilization from the 20-realm selection hall.
 - Use **Conquest** for a five-wave realm incursion and **Endless Survival** for escalating waves.
-- Desktop: `WASD`/arrows move, click attacks, `Space` dodges, `Q E R F` trigger the ruler abilities, and `C` summons elite allies.
+- Desktop: `WASD`/arrows move, left-click chains directional attacks, right-click/`Shift` unleashes a heavy breaker, `Space` phase-dodges, `Q E R F` trigger ruler abilities, and `C` summons elite allies.
 - Touch: use the lower-left movement stick, lower-right attack button, and ability buttons.
+
+## Veteran combat overhaul
+
+- Three-hit directional weapon chains, stamina heavy attacks, phase-dodge invulnerability, hit-stop, knockback and adaptive camera impact.
+- Mixed enemy warbands: circling skirmishers, shielded vanguards, telegraphed brutes, kiting projectile mystics and sovereign boss encounters.
+- Command-shard pickups, score multipliers, independently targeting elite allies, boss health presentation and wave cinematics.
+- Layered PBR ruler rigs with articulated anatomy, cloth, armor, shields, realm headgear and separate weapons visibly held in hand.
+- Five realm-architecture families—observatory gates, gilded basilicas, foundry pylons, ancient groves and rune monoliths—combined with each civilization's seeded biome.
+- A live rotating 3D ruler preview on the civilization selection screen.
 
 ## Structure
 
 - `src/simulation/catalog.ts` — all 20 active civilizations, personalities, maps, abilities, elites and visual palettes.
 - `src/main.ts` — game screens, Three.js battlefield, combat loop, tactical summons, campaign/survival logic and local progress.
-- `src/render/characterRig.ts` — procedural articulated character rigs (jointed arms/legs/spine/head, per-civilization weapons) with idle/walk/attack/cast/hit/summon animation states.
+- `src/render/characterRig.ts` — layered articulated PBR ruler rigs, held weapons, shields, realm silhouettes and combat animation states.
 - `src/render/environment.ts` — seeded 3D realm environments: noise-displaced terrain with a mountain rim, gradient/eclipse skydome, biome props, ruined pillars, waving banners and the central shrine.
-- `src/render/` also holds pooled combat VFX and the adaptive cinematic image pipeline.
+- `src/render/` also holds combat telegraphs, directional weapon trails, pooled impact VFX and the adaptive cinematic image pipeline.
 - `android/` and `ios/` — Capacitor-native projects with branded icons and splash screens.
 - `src/styles.css` — desktop/mobile game UI.
 - `public/assets/` — original generated title and civilization/terrain art used locally by the game.
