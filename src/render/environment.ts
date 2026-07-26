@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Civilization } from '../simulation/types';
 
 type Banner = { cloth: THREE.Mesh; base: Float32Array; phase: number };
@@ -11,6 +12,8 @@ interface EnvState {
   sun: THREE.DirectionalLight;
   banners: Banner[];
   crystalMaterial: THREE.MeshStandardMaterial;
+  runeMaterials: THREE.MeshStandardMaterial[];
+  floaters: { object: THREE.Object3D; baseY: number; speed: number; phase: number }[];
   phase: number;
 }
 
@@ -159,6 +162,151 @@ function scatter(rng: () => number, minRadius: number, maxRadius: number): { x: 
   return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
 }
 
+function buildRealmArchitecture(
+  civ: Civilization,
+  rng: () => number,
+  stone: THREE.MeshStandardMaterial,
+  glow: THREE.MeshStandardMaterial,
+): { root: THREE.Group; runeMaterials: THREE.MeshStandardMaterial[]; floaters: { object: THREE.Object3D; baseY: number; speed: number; phase: number }[] } {
+  const root = new THREE.Group();
+  root.name = `${civ.name} landmarks`;
+  const runeMaterials: THREE.MeshStandardMaterial[] = [];
+  const floaters: { object: THREE.Object3D; baseY: number; speed: number; phase: number }[] = [];
+  const style = civ.index % 5;
+
+  const makeRune = (radius: number, color = civ.palette.glow): THREE.Mesh<THREE.RingGeometry, THREE.MeshStandardMaterial> => {
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 1.25,
+      transparent: true,
+      opacity: .78,
+      side: THREE.DoubleSide,
+      roughness: .26,
+      metalness: .55,
+    });
+    runeMaterials.push(material);
+    const rune = new THREE.Mesh(new THREE.RingGeometry(radius * .72, radius, 64), material);
+    rune.rotation.x = -Math.PI / 2;
+    return rune;
+  };
+
+  const makeArch = (angle: number, radius: number, height: number): THREE.Group => {
+    const arch = new THREE.Group();
+    const columnGeometry = new THREE.CylinderGeometry(.28, .38, height, 10);
+    const left = new THREE.Mesh(columnGeometry, stone);
+    const right = new THREE.Mesh(columnGeometry, stone);
+    left.position.set(-1.15, height / 2, 0);
+    right.position.set(1.15, height / 2, 0);
+    const lintel = new THREE.Mesh(new RoundedBoxGeometry(2.72, .48, .42, 4, .12), stone);
+    lintel.position.y = height;
+    [left, right, lintel].forEach((mesh) => { mesh.castShadow = true; mesh.receiveShadow = true; arch.add(mesh); });
+    const rune = makeRune(.64);
+    rune.position.set(0, height - .2, .03);
+    rune.rotation.set(0, 0, 0);
+    arch.add(rune);
+    arch.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+    arch.rotation.y = -angle + Math.PI / 2;
+    return arch;
+  };
+
+  if (style === 0) {
+    // Floating observatory stones and orbital gates.
+    for (let i = 0; i < 5; i += 1) {
+      const angle = (i / 5) * Math.PI * 2 + .2;
+      const gate = makeArch(angle, 21.5, 4.2 + (i % 2) * .7);
+      root.add(gate);
+      const shard = new THREE.Mesh(new THREE.OctahedronGeometry(.55 + rng() * .22, 1), glow);
+      shard.position.set(Math.cos(angle) * 20.3, 3.1 + rng(), Math.sin(angle) * 20.3);
+      shard.rotation.set(rng(), rng() * Math.PI, rng());
+      shard.castShadow = true;
+      root.add(shard);
+      floaters.push({ object: shard, baseY: shard.position.y, speed: .48 + rng() * .35, phase: rng() * Math.PI * 2 });
+    }
+  } else if (style === 1) {
+    // Basilica buttresses and gilded processional gates.
+    for (let i = 0; i < 4; i += 1) {
+      const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const arch = makeArch(angle, 22.5, 4.8);
+      arch.scale.set(1.15, 1.15, 1.15);
+      root.add(arch);
+      const crown = new THREE.Mesh(new THREE.TorusKnotGeometry(.42, .095, 72, 10, 2, 3), glow);
+      crown.position.set(Math.cos(angle) * 22.5, 5.75, Math.sin(angle) * 22.5);
+      crown.castShadow = true;
+      root.add(crown);
+      floaters.push({ object: crown, baseY: crown.position.y, speed: .32, phase: angle });
+    }
+  } else if (style === 2) {
+    // Foundry pylons with suspended energy coils.
+    for (let i = 0; i < 6; i += 1) {
+      const angle = (i / 6) * Math.PI * 2;
+      const pylon = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(.75, 1.05, .65, 8), stone);
+      base.position.y = .325;
+      const column = new THREE.Mesh(new THREE.CylinderGeometry(.22, .45, 4.3, 8), stone);
+      column.position.y = 2.45;
+      const coil = new THREE.Mesh(new THREE.TorusKnotGeometry(.48, .075, 58, 8, 2, 3), glow);
+      coil.position.y = 4.5;
+      [base, column, coil].forEach((mesh) => { mesh.castShadow = true; pylon.add(mesh); });
+      pylon.position.set(Math.cos(angle) * 21, 0, Math.sin(angle) * 21);
+      pylon.rotation.y = angle;
+      root.add(pylon);
+      floaters.push({ object: coil, baseY: 4.5, speed: .65, phase: angle });
+    }
+  } else if (style === 3) {
+    // Ancient grove arches with luminous crowns.
+    const branchMaterial = new THREE.MeshStandardMaterial({ color: '#25190f', roughness: .94 });
+    for (let i = 0; i < 7; i += 1) {
+      const angle = (i / 7) * Math.PI * 2 + rng() * .15;
+      const tree = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.28, .52, 4.8, 9), branchMaterial);
+      trunk.position.y = 2.4;
+      trunk.castShadow = true;
+      tree.add(trunk);
+      for (let j = 0; j < 5; j += 1) {
+        const branch = new THREE.Mesh(new THREE.CylinderGeometry(.08, .18, 2.3, 7), branchMaterial);
+        branch.position.set(0, 3.45 + j * .18, 0);
+        branch.rotation.set((rng() - .5) * .5, j * 1.27, .78 + rng() * .32);
+        branch.castShadow = true;
+        tree.add(branch);
+        const bloom = new THREE.Mesh(new THREE.IcosahedronGeometry(.42 + rng() * .16, 1), glow);
+        bloom.position.set(Math.cos(j * 1.27) * 1.4, 4.15 + j * .16, Math.sin(j * 1.27) * 1.4);
+        tree.add(bloom);
+      }
+      tree.position.set(Math.cos(angle) * (21 + rng() * 4), 0, Math.sin(angle) * (21 + rng() * 4));
+      root.add(tree);
+    }
+  } else {
+    // Nomad monoliths and timeworn rune discs.
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (i / 8) * Math.PI * 2 + .12;
+      const monolith = new THREE.Group();
+      const slab = new THREE.Mesh(new RoundedBoxGeometry(.82, 4.4, .58, 5, .13), stone);
+      slab.position.y = 2.2;
+      slab.rotation.z = (rng() - .5) * .08;
+      slab.castShadow = true;
+      monolith.add(slab);
+      const rune = makeRune(.28 + (i % 3) * .08);
+      rune.position.set(0, 2.45, .31);
+      rune.rotation.set(0, 0, 0);
+      monolith.add(rune);
+      monolith.position.set(Math.cos(angle) * 22.5, 0, Math.sin(angle) * 22.5);
+      monolith.rotation.y = -angle + Math.PI;
+      root.add(monolith);
+    }
+  }
+
+  for (let i = 0; i < 3; i += 1) {
+    const radius = 9.8 + i * 3.1;
+    const rune = makeRune(radius, i === 1 ? civ.palette.primary : civ.palette.glow);
+    rune.position.y = .028 + i * .004;
+    rune.material.opacity = .12 - i * .018;
+    root.add(rune);
+  }
+
+  return { root, runeMaterials, floaters };
+}
+
 export function buildEnvironment(ctx: { scene: THREE.Scene; decor: THREE.Group; civ: Civilization }): void {
   const { scene, decor, civ } = ctx;
   decor.clear();
@@ -243,6 +391,9 @@ export function buildEnvironment(ctx: { scene: THREE.Scene; decor: THREE.Group; 
     well.position.copy(position);
     decor.add(well);
   });
+
+  const architecture = buildRealmArchitecture(civ, rng, stone, glowMat);
+  decor.add(architecture.root);
 
   // ruined pillar ring outside the arena
   for (let i = 0; i < 9; i += 1) {
@@ -376,7 +527,18 @@ export function buildEnvironment(ctx: { scene: THREE.Scene; decor: THREE.Group; 
   light.position.set(0, 4.5, 0);
   decor.add(light);
 
-  const state: EnvState = { core, rings, embers, light, sun, banners, crystalMaterial, phase: rng() * Math.PI * 2 };
+  const state: EnvState = {
+    core,
+    rings,
+    embers,
+    light,
+    sun,
+    banners,
+    crystalMaterial,
+    runeMaterials: architecture.runeMaterials,
+    floaters: architecture.floaters,
+    phase: rng() * Math.PI * 2,
+  };
   decor.userData.env = state;
 }
 
@@ -392,6 +554,14 @@ export function animateEnvironment(decor: THREE.Group, time: number, combatInten
   env.embers.rotation.y = time * .045;
   env.embers.position.y = (time * .3) % 2.4;
   env.crystalMaterial.emissiveIntensity = 1.1 + Math.sin(time * 2.2 + env.phase) * .3 + combatIntensity * .5;
+  env.runeMaterials.forEach((material, index) => {
+    material.emissiveIntensity = .85 + Math.sin(time * (1.2 + index * .035) + env.phase + index) * .35 + combatIntensity * .3;
+  });
+  env.floaters.forEach((floater) => {
+    floater.object.position.y = floater.baseY + Math.sin(time * floater.speed + floater.phase) * .26;
+    floater.object.rotation.y += .004 + combatIntensity * .002;
+    floater.object.rotation.x += .0015;
+  });
   env.banners.forEach(({ cloth, base, phase }) => {
     const positions = cloth.geometry.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < positions.count; i += 1) {
