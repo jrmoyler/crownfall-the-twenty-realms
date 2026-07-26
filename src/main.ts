@@ -26,6 +26,18 @@ let selected: CivilizationId = 'collective';
 let activeMode: Mode = 'survival';
 let activeGame: RealmGame | null = null;
 let activePreview: SelectionPreview | null = null;
+const webglAvailable = (() => {
+  try {
+    const probe = document.createElement('canvas');
+    const context = probe.getContext('webgl2', { failIfMajorPerformanceCaveat: false })
+      ?? probe.getContext('webgl', { failIfMajorPerformanceCaveat: false });
+    const available = Boolean(context);
+    context?.getExtension('WEBGL_lose_context')?.loseContext();
+    return available;
+  } catch {
+    return false;
+  }
+})();
 
 const icon = (name: string) => `<span class="icon icon-${name}" aria-hidden="true"></span>`;
 const button = (label: string, action: string, extra = '') => `<button class="button ${extra}" data-action="${action}">${label}</button>`;
@@ -56,7 +68,15 @@ function renderSelect(mode: Mode): void {
   app.innerHTML = `<main class="shell selection-shell">${nav()}<section class="selection-head"><div><p class="eyebrow">${mode === 'survival' ? 'ENDLESS SURVIVAL' : 'CHOOSE YOUR DYNASTY'}</p><h2>Choose the realm<br><em>that carries your crown.</em></h2></div><div class="selection-mode"><button class="mode-chip ${mode === 'campaign' ? 'active' : ''}" data-action="select-campaign">Conquest</button><button class="mode-chip ${mode === 'survival' ? 'active' : ''}" data-action="select-survival">Survival</button></div></section><section class="selection-layout"><aside class="ruler-panel" style="--realm:${current.palette.primary};--glow:${current.palette.glow};"><div class="ruler-panel__art ruler-panel__art--3d"><canvas id="ruler-preview" aria-label="Rotating 3D preview of ${current.ruler}"></canvas><span>DRAG-FREE · LIVE RIG</span></div><div class="ruler-panel__mist"></div><p class="eyebrow">${String(current.index).padStart(2, '0')} · ${current.biome}</p><h3>${current.name}</h3><p class="ruler-title">${current.title} · ${current.ruler}</p><p>${current.doctrine}</p><dl><div><dt>WEAPON</dt><dd>${current.weapon}</dd></div><div><dt>ELITE</dt><dd>${current.elite}</dd></div><div><dt>THREAT</dt><dd>${'◆'.repeat(current.difficulty)}${'◇'.repeat(4 - current.difficulty)}</dd></div></dl><div class="ability-list">${current.abilities.map((ability, index) => `<span><b>${['Q','E','R','F'][index]}</b>${ability}</span>`).join('')}</div>${button(mode === 'campaign' ? 'Open War Map' : 'Enter Survival', mode === 'campaign' ? 'campaign' : 'battle', 'button--gold button--full')}</aside><section class="civilization-grid" aria-label="Select civilization">${CIVILIZATIONS.map((c) => `<button class="civilization-card ${c.id === selected ? 'selected' : ''}" data-civ="${c.id}" style="--realm:${c.palette.primary};--glow:${c.palette.glow}"><span class="civilization-card__number">${String(c.index).padStart(2, '0')}</span><span class="civilization-card__sigil">${sigil(c.index)}</span><strong>${c.name}</strong><small>${c.biome}</small></button>`).join('')}</section></section></main>`;
   wireUi();
   const preview = app.querySelector<HTMLCanvasElement>('#ruler-preview');
-  if (preview) activePreview = new SelectionPreview(preview, current);
+  if (preview && webglAvailable) {
+    try {
+      activePreview = new SelectionPreview(preview, current);
+    } catch {
+      renderPreviewFallback(preview, current);
+    }
+  } else if (preview) {
+    renderPreviewFallback(preview, current);
+  }
 }
 
 function renderCampaign(): void {
@@ -92,6 +112,19 @@ function renderResults(): void {
 }
 
 function sigil(index: number): string { return ['✦','◉','⌘','✹','◈','⌬','⬡','❋','◌','⌁','◉','✧','❖','⚖','↗','✦','◍','▰','✥','∞'][index - 1] ?? '✦'; }
+
+function renderPreviewFallback(canvas: HTMLCanvasElement, civ: Civilization): void {
+  canvas.hidden = true;
+  const frame = canvas.parentElement;
+  if (!frame) return;
+  const fallback = document.createElement('div');
+  fallback.className = 'ruler-preview-fallback';
+  fallback.setAttribute('role', 'img');
+  fallback.setAttribute('aria-label', `Heraldic preview for ${civ.ruler}`);
+  fallback.innerHTML = `<i>${sigil(civ.index)}</i><b>${civ.ruler}</b><small>${civ.title} · ${civ.weapon}</small>`;
+  frame.prepend(fallback);
+  frame.querySelector<HTMLElement>(':scope > span')?.replaceChildren(document.createTextNode('HERALDIC FIELD DOSSIER'));
+}
 
 function wireUi(): void {
   app.querySelectorAll<HTMLElement>('[data-civ]').forEach((element) => element.addEventListener('click', () => { selected = element.dataset.civ as CivilizationId; if (element.classList.contains('realm-node')) renderCampaign(); else setScreen('select', activeMode); }));
@@ -153,11 +186,20 @@ function startBattle(mode: Mode): void {
     </main>`;
   const canvas = document.querySelector<HTMLCanvasElement>('#realm-canvas');
   if (!canvas) return;
-  activeGame = new RealmGame(canvas, civ, mode, (result) => {
-    (window as Window & { crownfallResult?: RunResult }).crownfallResult = result;
-    if (result.victory && mode === 'campaign' && !profile.completed.includes(civ.id)) profile.completed.push(civ.id);
-    profile.best[civ.id] = Math.max(profile.best[civ.id] ?? 0, result.score); saveProfile(profile); setScreen('results');
-  });
+  if (!webglAvailable) {
+    renderRendererFallback(civ, mode);
+    return;
+  }
+  try {
+    activeGame = new RealmGame(canvas, civ, mode, (result) => {
+      (window as Window & { crownfallResult?: RunResult }).crownfallResult = result;
+      if (result.victory && mode === 'campaign' && !profile.completed.includes(civ.id)) profile.completed.push(civ.id);
+      profile.best[civ.id] = Math.max(profile.best[civ.id] ?? 0, result.score); saveProfile(profile); setScreen('results');
+    });
+  } catch {
+    renderRendererFallback(civ, mode);
+    return;
+  }
   app.querySelectorAll<HTMLElement>('[data-ability]').forEach((item) => item.addEventListener('click', () => activeGame?.ability(Number(item.dataset.ability))));
   app.querySelector<HTMLElement>('[data-battle="pause"]')?.addEventListener('click', () => activeGame?.togglePause());
   app.querySelector<HTMLElement>('[data-battle="attack"]')?.addEventListener('click', () => activeGame?.attack());
@@ -174,6 +216,29 @@ function startBattle(mode: Mode): void {
     const clear = (event: PointerEvent) => { if (event.pointerId !== stickPointer) return; stickPointer = null; activeGame?.setTouchVector(0, 0); const knob = stick.querySelector<HTMLElement>('i'); if (knob) knob.style.transform = ''; };
     stick.addEventListener('pointerup', clear); stick.addEventListener('pointercancel', clear);
   }
+}
+
+function renderRendererFallback(civ: Civilization, mode: Mode): void {
+  activeGame?.dispose();
+  activeGame = null;
+  app.innerHTML = `<main class="renderer-fallback" style="--realm:${civ.palette.primary};--glow:${civ.palette.glow}">
+    <div class="renderer-fallback__art"></div>
+    <section>
+      <span class="renderer-fallback__sigil">${sigil(civ.index)}</span>
+      <p class="eyebrow">GRAPHICS ENGINE STANDBY</p>
+      <h2>The realm needs<br><em>hardware acceleration.</em></h2>
+      <p>${civ.ruler}'s battlefield is a real-time 3D experience. Enable WebGL or hardware acceleration in your browser, then return to the breach.</p>
+      <div class="renderer-fallback__actions">
+        ${button('Try the battlefield again', 'retry-renderer', 'button--gold')}
+        ${button('Choose another realm', 'fallback-select', 'button--ghost')}
+        ${button('Return to title', 'title', 'button--ghost')}
+      </div>
+      <small>Recommended: current Chrome, Edge, Firefox, or Safari with WebGL 2 enabled.</small>
+    </section>
+  </main>`;
+  app.querySelector<HTMLElement>('[data-action="retry-renderer"]')?.addEventListener('click', () => window.location.reload());
+  app.querySelector<HTMLElement>('[data-action="fallback-select"]')?.addEventListener('click', () => setScreen('select', mode));
+  app.querySelector<HTMLElement>('[data-action="title"]')?.addEventListener('click', () => setScreen('title'));
 }
 
 class SelectionPreview {
