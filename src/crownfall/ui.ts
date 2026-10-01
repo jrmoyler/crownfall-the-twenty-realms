@@ -1,4 +1,5 @@
 import { RealmAudio } from "./audio";
+import { loadRealmLibrary } from "./assets";
 import { ATLAS, byId, CIVILIZATIONS, neighborIndexes, sigilPaths } from "./catalog";
 import { clearKey, loadSave, sealRankCost, writeSave } from "./save";
 import type { Civilization, CivilizationId, HudState, Mode, RelicDef, RunResult, SaveData } from "./types";
@@ -367,7 +368,19 @@ class CrownfallApp {
     this.audio.unlock();
     this.audio.setTheme(parseInt(civ.palette.primary.slice(1, 3), 16));
     this.audio.applyMute();
+    void this.bootField(canvas, floats, civ, rival, mode, reduced);
+  }
+
+  private async bootField(
+    canvas: HTMLCanvasElement,
+    floats: HTMLElement,
+    civ: Civilization,
+    rival: Civilization,
+    mode: Mode,
+    reduced: boolean,
+  ): Promise<void> {
     try {
+      await loadRealmLibrary();
       this.battle = new Battle({
         canvas,
         floats,
