@@ -1,5 +1,6 @@
 import { RealmAudio } from "./audio";
-import { loadRealmLibrary } from "./assets";
+import credits from "../../CREDITS.md?raw";
+import { loadBattle } from "./assets";
 import { ATLAS, byId, CIVILIZATIONS, neighborIndexes, sigilPaths } from "./catalog";
 import { clearKey, loadSave, sealRankCost, writeSave } from "./save";
 import type { Civilization, CivilizationId, HudState, Mode, RelicDef, RunResult, SaveData } from "./types";
@@ -20,6 +21,7 @@ class CrownfallApp {
   private battle: Battle | null = null;
   private rival: CivilizationId = "zenflow";
   private tutorialStep = 0;
+  private bootToken = 0;
   private qa: boolean;
 
   constructor(private readonly root: HTMLElement) {
@@ -28,7 +30,15 @@ class CrownfallApp {
     if (this.qa) this.save.tutorialSeen = true;
     this.audio.unlock = this.audio.unlock.bind(this.audio);
     this.root.addEventListener("pointerdown", () => this.audio.unlock(), { once: true });
-    if (this.qa) this.openBattle("survival");
+    if (this.qa) {
+      // ?qa opens survival; ?qa=campaign&civ=<id>&rival=<id> opens a specific conquest.
+      const params = new URLSearchParams(location.search);
+      const civ = params.get("civ");
+      const rival = params.get("rival");
+      if (civ && CIVILIZATIONS.some((c) => c.id === civ)) this.save.selected = civ as CivilizationId;
+      if (rival && CIVILIZATIONS.some((c) => c.id === rival)) this.rival = rival as CivilizationId;
+      this.openBattle(params.get("qa") === "campaign" ? "campaign" : "survival");
+    }
     else this.showTitle();
   }
 
@@ -288,6 +298,7 @@ class CrownfallApp {
         <label class="toggle"><span><b>Mute the hall</b><small>Drone, steel, and the ugly noises.</small></span><input type="checkbox" data-set="mute" ${this.save.muted ? "checked" : ""}/></label>
         <label class="toggle"><span><b>Reduce motion</b><small>No camera trauma. Quieter weather of light.</small></span><input type="checkbox" data-set="motion" ${this.save.reducedMotion ? "checked" : ""}/></label>
         <button class="btn btn-ghost" data-go="reset">Erase the chronicle</button>
+        <details class="credits"><summary>Art credits</summary>${creditsHtml()}</details>
       </section>
     `);
   }
@@ -315,6 +326,9 @@ class CrownfallApp {
   }
 
   private openBattle(mode: Mode = this.mode): void {
+    // A restart used to leave the previous battle's loop and scene running underneath.
+    this.battle?.dispose();
+    this.battle = null;
     this.mode = mode;
     const civ = this.civ();
     const rival = mode === "campaign" ? byId(this.rival) : CIVILIZATIONS[(civ.index) % 20]!;
@@ -322,7 +336,7 @@ class CrownfallApp {
     this.root.innerHTML = `
       <div class="grain"></div>
       <section class="battle ${reduced ? "is-still" : ""}" style="--realm:${civ.palette.primary};--glow:${civ.palette.glow}">
-        <canvas id="cf-canvas" aria-label="${civ.name} battlefield"></canvas>
+        <canvas id="cf-canvas"></canvas>
         <div class="floats" id="cf-floats"></div>
         <div class="vignette"></div>
         <header class="hud-top">
@@ -343,46 +357,53 @@ class CrownfallApp {
         </aside>
         <footer class="hud-bottom">
           <div class="rites">
-            ${civ.abilities.map((ability, i) => `<button class="rite" data-cast="${i}"><kbd>${["Q", "E", "R", "F"][i]}</kbd><span>${ability.name}</span><i id="cf-cd-${i}"></i></button>`).join("")}
-            <button class="rite" data-cast="4"><kbd>C</kbd><span>Call ${civ.elite}</span><i id="cf-cd-4"></i></button>
+            ${civ.abilities.map((ability, i) => `<button class="rite" data-cast="${i}"><kbd>${["Q", "E", "R", "F"][i]}</kbd><span>${ability.name}</span><i data-cd="${i}"></i></button>`).join("")}
+            <button class="rite" data-cast="4"><kbd>C</kbd><span>Call ${civ.elite}</span><i data-cd="4"></i></button>
           </div>
-          <p class="hints">WASD move · click strike · shift breaker · space dodge</p>
+          <p class="hints">WASD move · click strike · shift breaker · space dodge · gamepad ready</p>
         </footer>
-        <div class="touch">
-          <div class="stick" id="cf-stick"><i></i></div>
-          <div class="touch-actions">
-            <button data-cast="0">Q</button><button data-cast="1">E</button><button data-cast="2">R</button><button data-cast="3">F</button>
-            <button id="cf-dodge">Dodge</button>
-            <button id="cf-heavy">Break</button>
-            <button id="cf-strike" class="strike">Strike</button>
+        <div class="touch" aria-label="Touch controls">
+          <div class="stick-zone" id="cf-stickzone"><div class="stick" id="cf-stick"><i></i></div></div>
+          <div class="pad">
+            ${civ.abilities.map((ability, i) => `<button class="pad-btn pad-rite" style="${riteSpot(i)}" data-cast="${i}" aria-label="${ability.name}"><span>${riteLabel(ability.name)}</span><i class="sweep" data-cd="${i}"></i></button>`).join("")}
+            <button class="pad-btn pad-call" style="${padSpot(50, 108, 46)}" data-cast="4" aria-label="Call ${civ.elite}"><span>Elites</span><i class="sweep" data-cd="4"></i></button>
+            <button class="pad-btn pad-break" style="${padSpot(86, 98, 60)}" id="cf-heavy">Break</button>
+            <button class="pad-btn pad-dodge" style="${padSpot(4, 98, 60)}" id="cf-dodge">Dodge</button>
+            <button class="pad-btn pad-strike" id="cf-strike">Strike</button>
           </div>
         </div>
+        <div class="loading" id="cf-loading"><p class="eyebrow">Marching on</p><h2>${(mode === "campaign" ? rival : civ).biome}</h2><span class="bar"><i id="cf-load"></i></span></div>
         <div class="banner" id="cf-banner"><small></small><b></b></div>
         <div class="overlay" id="cf-pause-layer" hidden><div class="sheet"><p class="eyebrow">Held</p><h2>The field waits.</h2><button class="btn btn-gold" id="cf-resume">Resume</button><button class="btn btn-ghost" id="cf-retry">Restart</button><button class="btn btn-ghost" data-go="${mode === "campaign" ? "map" : "hall"}">Leave</button></div></div>
         <div class="overlay" id="cf-draft" hidden><div class="sheet sheet-wide"><p class="eyebrow">Relic draft</p><h2 id="cf-draft-title">Choose</h2><div class="draft-row" id="cf-draft-row"></div></div></div>
         <div class="overlay" id="cf-tutor" hidden><div class="sheet"><p class="eyebrow">First march</p><h2 id="cf-tutor-title"></h2><p id="cf-tutor-body"></p><div class="title-actions"><button class="btn btn-ghost" id="cf-tutor-skip">Skip</button><button class="btn btn-gold" id="cf-tutor-next">Next</button></div></div></div>
       </section>`;
-    const canvas = this.root.querySelector<HTMLCanvasElement>("#cf-canvas");
+    const host = this.root.querySelector<HTMLElement>(".battle");
     const floats = this.root.querySelector<HTMLElement>("#cf-floats");
-    if (!canvas || !floats) return;
+    if (!host || !floats) return;
     this.audio.unlock();
     this.audio.setTheme(parseInt(civ.palette.primary.slice(1, 3), 16));
     this.audio.applyMute();
-    void this.bootField(canvas, floats, civ, rival, mode, reduced);
+    void this.bootField(host, floats, civ, rival, mode, reduced);
   }
 
   private async bootField(
-    canvas: HTMLCanvasElement,
+    host: HTMLElement,
     floats: HTMLElement,
     civ: Civilization,
     rival: Civilization,
     mode: Mode,
     reduced: boolean,
   ): Promise<void> {
+    const token = (this.bootToken += 1);
     try {
-      await loadRealmLibrary();
+      const bar = this.root.querySelector<HTMLElement>("#cf-load");
+      await loadBattle(civ, rival, mode, (k) => {
+        if (bar) bar.style.transform = `scaleX(${k})`;
+      });
+      if (token !== this.bootToken || !host.isConnected) return;
       this.battle = new Battle({
-        canvas,
+        host,
         floats,
         civ,
         rival,
@@ -405,7 +426,9 @@ class CrownfallApp {
         onTogglePause: () => this.togglePause(),
         onHud: (hud) => this.paintHud(hud),
       });
+      host.classList.add("is-ready");
     } catch (error) {
+      if (token !== this.bootToken) return;
       this.root.innerHTML = `<section class="settings"><h2>This device could not open the battlefield.</h2><p>${error instanceof Error ? error.message : "WebGL unavailable."}</p><button class="btn btn-gold" data-go="title">Return</button></section>`;
       this.bind();
       return;
@@ -439,9 +462,13 @@ class CrownfallApp {
       bar("#cf-boss-fill", hud.bossHp, hud.bossMax);
     }
     hud.cooldowns.forEach((cd, index) => {
-      const el = this.root.querySelector<HTMLElement>(`#cf-cd-${index}`);
       const max = hud.cooldownMax[index] || 1;
-      if (el) el.style.transform = `scaleX(${Math.max(0, Math.min(1, cd / max))})`;
+      const k = Math.max(0, Math.min(1, cd / max));
+      this.root.querySelectorAll<HTMLElement>(`[data-cd="${index}"]`).forEach((el) => {
+        if (el.classList.contains("sweep")) el.style.setProperty("--k", String(k));
+        else el.style.transform = `scaleX(${k})`;
+        el.parentElement?.classList.toggle("is-cooling", k > 0.001);
+      });
     });
     const feed = this.root.querySelector<HTMLElement>("#cf-feed");
     if (feed) feed.innerHTML = hud.feed.map((line) => `<li>${line}</li>`).join("");
@@ -511,18 +538,34 @@ class CrownfallApp {
     this.root.querySelector("#cf-pause")?.addEventListener("click", () => this.togglePause());
     this.root.querySelector("#cf-resume")?.addEventListener("click", () => this.togglePause());
     this.root.querySelector("#cf-retry")?.addEventListener("click", () => this.openBattle(this.mode));
+    // Touch buttons act on pointerdown: click waits for the finger to lift and is dropped
+    // entirely while another finger is on the stick.
+    const press = (el: Element | null, down: () => void, up?: () => void) => {
+      if (!el) return;
+      el.addEventListener("pointerdown", (event) => {
+        const e = event as PointerEvent;
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        e.preventDefault();
+        (el as HTMLElement).setPointerCapture?.(e.pointerId);
+        el.classList.add("is-down");
+        this.audio.unlock();
+        if (e.pointerType !== "mouse") this.battle?.useTouch();
+        down();
+      });
+      const release = () => {
+        el.classList.remove("is-down");
+        up?.();
+      };
+      el.addEventListener("pointerup", release);
+      el.addEventListener("pointercancel", release);
+      el.addEventListener("lostpointercapture", release);
+    };
     this.root.querySelectorAll<HTMLButtonElement>("[data-cast]").forEach((button) => {
-      button.addEventListener("click", () => this.battle?.cast(Number(button.dataset.cast)));
+      press(button, () => this.battle?.cast(Number(button.dataset.cast)));
     });
-    const strike = this.root.querySelector("#cf-strike");
-    strike?.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      this.battle?.holdAttack(true);
-    });
-    strike?.addEventListener("pointerup", () => this.battle?.holdAttack(false));
-    strike?.addEventListener("pointerleave", () => this.battle?.holdAttack(false));
-    this.root.querySelector("#cf-heavy")?.addEventListener("click", () => this.battle?.heavy());
-    this.root.querySelector("#cf-dodge")?.addEventListener("click", () => this.battle?.dodge());
+    press(this.root.querySelector("#cf-strike"), () => this.battle?.holdAttack(true), () => this.battle?.holdAttack(false));
+    press(this.root.querySelector("#cf-heavy"), () => this.battle?.heavy());
+    press(this.root.querySelector("#cf-dodge"), () => this.battle?.dodge());
     this.root.querySelector("#cf-tutor-skip")?.addEventListener("click", () => this.closeTutor());
     this.root.querySelector("#cf-tutor-next")?.addEventListener("click", () => {
       if (this.tutorialStep >= this.tutor.length - 1) this.closeTutor();
@@ -531,40 +574,63 @@ class CrownfallApp {
     this.root.querySelectorAll<HTMLElement>("[data-go]").forEach((button) => {
       button.addEventListener("click", () => this.go(button.dataset.go || "", button.dataset.mode as Mode | undefined));
     });
+    // Floating stick: it appears under the thumb anywhere in the left half of the field.
+    const zone = this.root.querySelector<HTMLElement>("#cf-stickzone");
     const stick = this.root.querySelector<HTMLElement>("#cf-stick");
     const knob = stick?.querySelector("i");
-    if (!stick || !knob) return;
-    let active = false;
+    if (!zone || !stick || !knob) return;
+    let active: number | null = null;
+    let cx = 0;
+    let cy = 0;
+    const radius = () => stick.getBoundingClientRect().width * 0.42;
     const move = (event: PointerEvent) => {
-      const rect = stick.getBoundingClientRect();
-      const dx = event.clientX - (rect.left + rect.width / 2);
-      const dy = event.clientY - (rect.top + rect.height / 2);
-      const max = rect.width * 0.34;
+      const dx = event.clientX - cx;
+      const dy = event.clientY - cy;
+      const max = radius();
       const len = Math.hypot(dx, dy);
-      if (len < 4) {
-        knob.style.transform = "translate(0,0)";
+      if (len < 6) {
+        knob.style.transform = "translate(-50%, -50%)";
         this.battle?.setStick(0, 0);
         return;
       }
       const mag = Math.min(max, len);
       const nx = (dx / len) * mag;
       const ny = (dy / len) * mag;
-      knob.style.transform = `translate(${nx}px, ${ny}px)`;
-      this.battle?.setStick(nx / max, -ny / max);
+      knob.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
+      // Full speed a little before the rim so thumbs don't have to stretch.
+      const k = Math.min(1, mag / (max * 0.85));
+      this.battle?.setStick((dx / len) * k, (-dy / len) * k);
     };
-    stick.addEventListener("pointerdown", (event) => {
-      active = true;
-      stick.setPointerCapture(event.pointerId);
+    zone.addEventListener("pointerdown", (event) => {
+      if (active !== null) return;
+      event.preventDefault();
+      active = event.pointerId;
+      zone.setPointerCapture(event.pointerId);
+      const rect = zone.getBoundingClientRect();
+      cx = event.clientX;
+      cy = event.clientY;
+      stick.style.left = `${cx - rect.left}px`;
+      stick.style.top = `${cy - rect.top}px`;
+      stick.classList.add("is-live");
+      this.audio.unlock();
+      this.battle?.useTouch();
       move(event);
     });
-    stick.addEventListener("pointermove", (event) => { if (active) move(event); });
-    const end = () => {
-      active = false;
-      knob.style.transform = "translate(0,0)";
+    zone.addEventListener("pointermove", (event) => {
+      if (event.pointerId === active) move(event);
+    });
+    const end = (event: PointerEvent) => {
+      if (event.pointerId !== active) return;
+      active = null;
+      knob.style.transform = "translate(-50%, -50%)";
+      stick.classList.remove("is-live");
+      stick.style.left = "";
+      stick.style.top = "";
       this.battle?.setStick(0, 0);
     };
-    stick.addEventListener("pointerup", end);
-    stick.addEventListener("pointercancel", end);
+    zone.addEventListener("pointerup", end);
+    zone.addEventListener("pointercancel", end);
+    zone.addEventListener("lostpointercapture", end);
   }
 
   private finish(result: RunResult): void {
@@ -650,6 +716,34 @@ class CrownfallApp {
       <button data-go="settings">Settings</button>
     </nav></header>`;
   }
+}
+
+// Pad layout around the centre of Strike (48px in from the corner): breaker above, dodge
+// beside, elites in the pocket, the four rites on an outer arc. Sized for a 375px phone.
+function padSpot(angleDeg: number, radius: number, size: number): string {
+  const a = (angleDeg * Math.PI) / 180;
+  const right = 48 + Math.cos(a) * radius - size / 2;
+  const bottom = 48 + Math.sin(a) * radius - size / 2;
+  return `right:${right.toFixed(0)}px;bottom:${bottom.toFixed(0)}px;width:${size}px;height:${size}px`;
+}
+
+function riteSpot(index: number): string {
+  return padSpot(15 + index * 23, 160, 50);
+}
+
+function riteLabel(name: string): string {
+  const word = name.split(" ").filter((part) => part.length > 2).pop() ?? name;
+  return word.length > 8 ? word.slice(0, 7) + "." : word;
+}
+
+// CREDITS.md is generated by tools/assets/build.mjs; links stay plain text so nothing leaves the game.
+function creditsHtml(): string {
+  const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  return credits
+    .split("\n")
+    .filter((line) => line.startsWith("- ") || line.startsWith("## "))
+    .map((line) => (line.startsWith("## ") ? `<h3>${escape(line.slice(3))}</h3>` : `<p>${escape(line.slice(2))}</p>`))
+    .join("");
 }
 
 function uniqueEdges(): [number, number][] {

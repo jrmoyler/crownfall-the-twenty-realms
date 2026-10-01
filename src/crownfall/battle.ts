@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { RealmAudio } from "./audio";
 import { byIndex } from "./catalog";
 import { draftOptions } from "./relics";
+import { preloadRival } from "./assets";
 import { buildFigurine, poseFigurine, RealmStage, type FigParts } from "./stage";
 import type { Ability, Civilization, EnemyRole, HudState, Mode, RelicDef, RunResult, Seals } from "./types";
 
@@ -91,7 +92,7 @@ interface Floater {
 }
 
 export interface BattleOptions {
-  canvas: HTMLCanvasElement;
+  host: HTMLElement;
   floats: HTMLElement;
   civ: Civilization;
   rival: Civilization;
@@ -112,6 +113,7 @@ const WELLS: readonly [number, number][] = [[-7, 4.6], [7.2, -3.8]];
 
 export class Battle {
   private readonly stage: RealmStage;
+  private readonly canvas: HTMLCanvasElement;
   private readonly ray = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -172,7 +174,9 @@ export class Battle {
   private pointerAimed = false;
   private mouseAttack = false;
   private padAttack = false;
-  private padDodgeWas = false;
+  private padWas: boolean[] = [];
+  private padAim = false;
+  private lastInput: "mouse" | "touch" | "pad" | "keys" = "keys";
   private touchX = 0;
   private touchY = 0;
   private action = "idle";
@@ -187,7 +191,8 @@ export class Battle {
   private objective = "Hold the field";
 
   constructor(private readonly opt: BattleOptions) {
-    this.stage = new RealmStage(opt.canvas, opt.civ, opt.reducedMotion);
+    this.stage = new RealmStage(opt.host, opt.civ, opt.rival, opt.mode, opt.reducedMotion);
+    this.canvas = this.stage.canvas;
     this.hpMax = 100 + opt.seals.vitality * 12;
     this.hp = this.hpMax;
     if (opt.seals.reliquary >= 3) this.owned["honed"] = 1;
@@ -212,6 +217,13 @@ export class Battle {
   setStick(x: number, y: number): void {
     this.touchX = x;
     this.touchY = y;
+    if (x !== 0 || y !== 0) this.useTouch();
+  }
+
+  // A thumb has no cursor: forget any old mouse aim and let the stick and auto-aim steer.
+  useTouch(): void {
+    this.lastInput = "touch";
+    this.pointerAimed = false;
   }
 
   setKeys(codes: string[]): void {
@@ -219,7 +231,7 @@ export class Battle {
   }
 
   setAim(clientX: number, clientY: number): void {
-    const rect = this.opt.canvas.getBoundingClientRect();
+    const rect = this.canvas.getBoundingClientRect();
     this.pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.ray.setFromCamera(this.pointer, this.stage.camera);
     const hit = new THREE.Vector3();
@@ -232,6 +244,33 @@ export class Battle {
   holdAttack(down: boolean): void {
     this.mouseAttack = down;
     if (down) this.basicAttack();
+  }
+
+  // Touch and gamepad players get the nearest enemy in front of them; mouse players aim.
+  private autoFace(range = 9): void {
+    if (this.pointerAimed || this.padAim) return;
+    let best: Actor | null = null;
+    let score = Infinity;
+    const fx = Math.sin(this.yaw);
+    const fz = Math.cos(this.yaw);
+    for (const enemy of this.enemies) {
+      const dx = enemy.x - this.px;
+      const dz = enemy.z - this.pz;
+      const d = Math.hypot(dx, dz);
+      if (d > range) continue;
+      const facing = (dx * fx + dz * fz) / (d || 1);
+      const s = d * (1.6 - facing);
+      if (s < score) {
+        score = s;
+        best = enemy;
+      }
+    }
+    if (!best) {
+      this.aim.set(this.px + fx * 5, 0, this.pz + fz * 5);
+      return;
+    }
+    this.yaw = Math.atan2(best.x - this.px, best.z - this.pz);
+    this.aim.set(best.x, 0, best.z);
   }
 
   heavy(): void { this.heavyAttack(); }
@@ -260,8 +299,7 @@ export class Battle {
     this.floaters.forEach((floater) => floater.el.remove());
     this.shots.forEach((shot) => {
       this.stage.scene.remove(shot.mesh);
-      shot.mesh.geometry.dispose();
-      (shot.mesh.material as THREE.Material).dispose();
+      this.stage.dropShot(shot.mesh);
     });
     this.stage.dispose();
     if (window.__controlsTest?.getYaw === this.probe.getYaw) delete window.__controlsTest;
@@ -287,14 +325,23 @@ export class Battle {
   private readonly onKeyUp = (event: KeyboardEvent) => this.onKey(event, false);
   private readonly onPointerDown = (event: PointerEvent) => {
     this.opt.audio.unlock();
+    // Touches on the field are handled by the on-screen controls, never as aim or a strike.
+    if (event.pointerType !== "mouse") return;
+    this.lastInput = "mouse";
+    this.padAim = false;
     this.setAim(event.clientX, event.clientY);
     if (event.button === 0) this.holdAttack(true);
     if (event.button === 2) this.heavyAttack();
   };
   private readonly onPointerUp = (event: PointerEvent) => {
-    if (event.button === 0) this.mouseAttack = false;
+    if (event.pointerType === "mouse" && event.button === 0) this.mouseAttack = false;
   };
-  private readonly onPointerMove = (event: PointerEvent) => this.setAim(event.clientX, event.clientY);
+  private readonly onPointerMove = (event: PointerEvent) => {
+    if (event.pointerType !== "mouse") return;
+    this.lastInput = "mouse";
+    this.padAim = false;
+    this.setAim(event.clientX, event.clientY);
+  };
   private readonly onContext = (event: Event) => event.preventDefault();
   private readonly onBlur = () => {
     this.keys.clear();
@@ -332,10 +379,10 @@ export class Battle {
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
     window.addEventListener("resize", this.onResize);
-    this.opt.canvas.addEventListener("pointerdown", this.onPointerDown);
-    this.opt.canvas.addEventListener("pointerup", this.onPointerUp);
-    this.opt.canvas.addEventListener("pointermove", this.onPointerMove);
-    this.opt.canvas.addEventListener("contextmenu", this.onContext);
+    this.canvas.addEventListener("pointerdown", this.onPointerDown);
+    this.canvas.addEventListener("pointerup", this.onPointerUp);
+    this.canvas.addEventListener("pointermove", this.onPointerMove);
+    this.canvas.addEventListener("contextmenu", this.onContext);
   }
 
   private unbind(): void {
@@ -343,10 +390,10 @@ export class Battle {
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
     window.removeEventListener("resize", this.onResize);
-    this.opt.canvas.removeEventListener("pointerdown", this.onPointerDown);
-    this.opt.canvas.removeEventListener("pointerup", this.onPointerUp);
-    this.opt.canvas.removeEventListener("pointermove", this.onPointerMove);
-    this.opt.canvas.removeEventListener("contextmenu", this.onContext);
+    this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    this.canvas.removeEventListener("pointerup", this.onPointerUp);
+    this.canvas.removeEventListener("pointermove", this.onPointerMove);
+    this.canvas.removeEventListener("contextmenu", this.onContext);
   }
 
   private onKey(event: KeyboardEvent, down: boolean): void {
@@ -366,6 +413,7 @@ export class Battle {
       if (code === "Escape") this.opt.onTogglePause();
     }
     if (this.injected) return;
+    if (down) this.lastInput = this.lastInput === "touch" ? "keys" : this.lastInput;
     if (down) this.keys.add(code);
     else this.keys.delete(code);
   }
@@ -435,26 +483,10 @@ export class Battle {
     if (this.held("KeyA") || this.held("ArrowLeft")) ix -= 1;
     if (this.held("KeyW") || this.held("ArrowUp")) iz += 1;
     if (this.held("KeyS") || this.held("ArrowDown")) iz -= 1;
-    const pads = navigator.getGamepads?.() ?? [];
-    const pad = pads[0];
+    const pad = this.readPad();
     if (pad) {
-      const ax = pad.axes[0] ?? 0;
-      const ay = pad.axes[1] ?? 0;
-      if (Math.hypot(ax, ay) > 0.2) {
-        ix += ax;
-        iz += -ay;
-      }
-      this.padAttack = Boolean(pad.buttons[0]?.pressed);
-      const dodge = Boolean(pad.buttons[1]?.pressed);
-      if (dodge && !this.padDodgeWas) this.doDodge();
-      this.padDodgeWas = dodge;
-      if (pad.buttons[2]?.pressed) this.heavyAttack();
-      if (pad.buttons[3]?.pressed) this.ability(0);
-      if (pad.buttons[4]?.pressed) this.ability(1);
-      if (pad.buttons[5]?.pressed) this.ability(2);
-      if (pad.buttons[6]?.pressed) this.ability(3);
-    } else {
-      this.padAttack = false;
+      ix += pad.lx;
+      iz += pad.ly;
     }
     const wish = new THREE.Vector3();
     wish.addScaledVector(right, ix);
@@ -474,11 +506,60 @@ export class Battle {
     else this.momentum = Math.max(0, this.momentum - dt * 0.7);
     const faceX = this.aim.x - this.px;
     const faceZ = this.aim.z - this.pz;
-    if (this.pointerAimed && faceX * faceX + faceZ * faceZ > 0.16) this.yaw = Math.atan2(faceX, faceZ);
+    if (this.padAim && pad) {
+      const ax = right.x * pad.rx + forward.x * pad.ry;
+      const az = right.z * pad.rx + forward.z * pad.ry;
+      this.yaw = Math.atan2(ax, az);
+      this.aim.set(this.px + ax * 6, 0, this.pz + az * 6);
+    } else if (this.pointerAimed && faceX * faceX + faceZ * faceZ > 0.16) this.yaw = Math.atan2(faceX, faceZ);
     else if (moving) this.yaw = Math.atan2(wish.x, wish.z);
     if ((this.owned["shrineheart"] ?? 0) > 0 && Math.hypot(this.px, this.pz) < 4.2) {
       this.hp = Math.min(this.hpMax, this.hp + dt * 2.2 * (this.owned["shrineheart"] ?? 0));
     }
+  }
+
+  // Standard mapping: left stick moves, right stick aims, A strike, B dodge, X breaker,
+  // Y elites, LB/RB/LT/RT the four rites, Start pauses. Buttons fire on press, not per frame.
+  private readPad(): { lx: number; ly: number; rx: number; ry: number } | null {
+    const pads = navigator.getGamepads?.() ?? [];
+    let pad: Gamepad | null = null;
+    for (const candidate of pads) {
+      if (candidate && candidate.connected) {
+        pad = candidate;
+        break;
+      }
+    }
+    if (!pad) {
+      this.padAttack = false;
+      return null;
+    }
+    const dead = (x: number, y: number): [number, number] => {
+      const m = Math.hypot(x, y);
+      if (m < 0.18) return [0, 0];
+      const k = Math.min(1, (m - 0.18) / 0.82) / m;
+      return [x * k, y * k];
+    };
+    const [lx, ly] = dead(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
+    const [rx, ry] = dead(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
+    const pressed = (i: number) => Boolean(pad!.buttons[i]?.pressed || (pad!.buttons[i]?.value ?? 0) > 0.5);
+    const tap = (i: number) => pressed(i) && !this.padWas[i];
+    const any = lx !== 0 || ly !== 0 || rx !== 0 || ry !== 0 || pad.buttons.some((b) => b.pressed);
+    if (any) {
+      this.lastInput = "pad";
+      this.pointerAimed = false;
+    }
+    this.padAim = rx !== 0 || ry !== 0;
+    this.padAttack = pressed(0);
+    if (tap(1)) this.doDodge();
+    if (tap(2)) this.heavyAttack();
+    if (tap(3)) this.ability(4);
+    if (tap(4)) this.ability(0);
+    if (tap(5)) this.ability(1);
+    if (tap(6)) this.ability(2);
+    if (tap(7)) this.ability(3);
+    if (tap(9)) this.opt.onTogglePause();
+    this.padWas = pad.buttons.map((_, i) => pressed(i));
+    return { lx, ly: -ly, rx, ry: -ry };
   }
 
   private clampPlayer(): void {
@@ -492,6 +573,7 @@ export class Battle {
   private basicAttack(): void {
     if (this.paused || this.attackCd > 0 || this.ended) return;
     const ranged = this.opt.civ.weapon === "staff" || this.opt.civ.weapon === "orb";
+    this.autoFace(ranged ? 12 : 4.5);
     this.quiet = 0;
     this.action = "attack";
     this.actionAge = 0;
@@ -515,6 +597,7 @@ export class Battle {
   private heavyAttack(): void {
     if (this.paused || this.attackCd > 0 || this.stamina < 26 || this.ended) return;
     this.stamina -= 26;
+    this.autoFace(6);
     this.attackCd = 0.72;
     this.combo = 0;
     this.action = "heavy";
@@ -589,6 +672,7 @@ export class Battle {
     }
     const ability = this.opt.civ.abilities[index];
     if (!ability) return;
+    this.autoFace(14);
     const cdScale = 1 / (1 + (this.owned["quicksilver"] ?? 0) * 0.08);
     this.cd[index] = ability.cooldown * cdScale;
     this.action = ability.kind === "dash" ? "dash" : "cast";
@@ -703,12 +787,9 @@ export class Battle {
 
   private shoot(x: number, z: number, yaw: number, hostile: boolean, damage: number, radius: number, pierce: number, poison: number): void {
     const speed = hostile ? 7.2 : 16;
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(hostile ? 0.16 : 0.12, 8, 6),
-      new THREE.MeshBasicMaterial({ color: hostile ? "#ffb4a8" : this.opt.civ.palette.glow }),
-    );
-    mesh.position.set(x, 0.9, z);
-    this.stage.scene.add(mesh);
+    const mesh = this.stage.shot(hostile, hostile ? "#ff7a5c" : this.opt.civ.palette.glow, hostile ? 0.2 : 0.16);
+    mesh.position.set(x, 1.15, z);
+    mesh.rotation.y = yaw;
     this.shots.push({
       mesh, x, z,
       vx: Math.sin(yaw) * speed,
@@ -784,6 +865,9 @@ export class Battle {
     const boss = this.wave % 5 === 0;
     const count = 4 + Math.min(8, this.wave + 1);
     this.spawnPack(rival, count, boss);
+    this.wave += 1;
+    preloadRival(this.rivalForWave());
+    this.wave -= 1;
     this.spawnGrace = 0.8;
     this.clearArm = 0;
     this.flash(boss ? "WARLORD" : `WAVE ${this.wave}`, rival.name);
@@ -951,7 +1035,7 @@ export class Battle {
       ally.ttl -= dt;
       ally.cd -= dt;
       if (ally.ttl <= 0 || ally.hp <= 0) {
-        this.stage.removeActor(ally.parts);
+        this.stage.removeActor(ally.parts, ally.hp <= 0);
         this.allies.splice(i, 1);
         continue;
       }
@@ -1018,9 +1102,7 @@ export class Battle {
         }
       }
       if (dead) {
-        this.stage.scene.remove(shot.mesh);
-        shot.mesh.geometry.dispose();
-        (shot.mesh.material as THREE.Material).dispose();
+        this.stage.dropShot(shot.mesh);
         this.shots.splice(i, 1);
       }
     }
@@ -1289,16 +1371,15 @@ export class Battle {
     const player = this.stage.player;
     player.root.position.x = this.px;
     player.root.position.z = this.pz;
-    poseFigurine(player, this.time + this.stage.nowSeed(), moving, this.action, this.actionAge);
     player.root.rotation.y = this.yaw;
+    poseFigurine(player, this.time + this.stage.nowSeed(), moving, this.action, this.actionAge, dt);
     const actors = [...this.enemies, ...this.allies];
     actors.forEach((actor) => {
       actor.actionAge += dt;
       actor.parts.root.position.x = actor.x;
       actor.parts.root.position.z = actor.z;
-      const movingActor = actor.team === "enemy";
-      poseFigurine(actor.parts, this.time + actor.phase, movingActor, actor.action, actor.actionAge);
       actor.parts.root.rotation.y = actor.yaw;
+      poseFigurine(actor.parts, this.time + actor.phase, true, actor.action, actor.actionAge, dt);
       if (actor.action === "hit" && actor.actionAge > 0.25) actor.action = "idle";
     });
     this.stage.updateFx(dt);
@@ -1309,7 +1390,7 @@ export class Battle {
     const sy = Math.cos(this.time * 27) * shake * 0.18;
     this.look.set(this.px + Math.sin(this.yaw) * 1.4, 0, this.pz + Math.cos(this.yaw) * 1.4);
     this.stage.render(this.look, sx, sy, this.time, dt);
-    const rect = this.opt.canvas.getBoundingClientRect();
+    const rect = this.canvas.getBoundingClientRect();
     for (let i = this.floaters.length - 1; i >= 0; i -= 1) {
       const floater = this.floaters[i]!;
       floater.life -= dt;
