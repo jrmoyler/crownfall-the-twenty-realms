@@ -1,58 +1,41 @@
 # Crownfall: The Twenty Realms
 
-Standalone HTML5/WebGL survival-strategy game built around Collective AI Inc.'s 20 active civilizations.
+A browser action game. Twenty rulers, one war table. Pick a civilization, march on its neighbors, and keep what you take.
 
 ## Play
-
-Open `dist/index.html` through a local static server, then:
-
-- Choose any civilization from the 20-realm selection hall.
-- Use **Conquest** for a five-wave realm incursion and **Endless Survival** for escalating waves.
-- Desktop: `WASD`/arrows move, left-click chains directional attacks, right-click/`Shift` unleashes a heavy breaker, `Space` phase-dodges, `Q E R F` trigger ruler abilities, and `C` summons elite allies.
-- Touch: use the lower-left movement stick, lower-right attack button, and ability buttons.
-
-## Veteran combat overhaul
-
-- Three-hit directional weapon chains, stamina heavy attacks, phase-dodge invulnerability, hit-stop, knockback and adaptive camera impact.
-- Mixed enemy warbands: circling skirmishers, shielded vanguards, telegraphed brutes, kiting projectile mystics and sovereign boss encounters.
-- Command-shard pickups, score multipliers, independently targeting elite allies, boss health presentation and wave cinematics.
-- Layered PBR ruler rigs with articulated anatomy, cloth, armor, shields, realm headgear and separate weapons visibly held in hand.
-- Five realm-architecture families—observatory gates, gilded basilicas, foundry pylons, ancient groves and rune monoliths—combined with each civilization's seeded biome.
-- A live rotating 3D ruler preview on the civilization selection screen.
-
-## Structure
-
-- `src/simulation/catalog.ts` — all 20 active civilizations, personalities, maps, abilities, elites and visual palettes.
-- `src/main.ts` — game screens, Three.js battlefield, combat loop, tactical summons, campaign/survival logic and local progress.
-- `src/render/characterRig.ts` — layered articulated PBR ruler rigs, held weapons, shields, realm silhouettes and combat animation states.
-- `src/render/environment.ts` — seeded 3D realm environments: noise-displaced terrain with a mountain rim, gradient/eclipse skydome, biome props, ruined pillars, waving banners and the central shrine.
-- `src/render/` also holds combat telegraphs, directional weapon trails, pooled impact VFX and the adaptive cinematic image pipeline.
-- `android/` and `ios/` — Capacitor-native projects with branded icons and splash screens.
-- `src/styles.css` — desktop/mobile game UI.
-- `public/assets/` — original generated title and civilization/terrain art used locally by the game.
-- `dist/` — browser-ready production build.
-
-## Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-For a production check:
+Open the local address Vite prints. A production build is `npm run build`, then any static server pointed at `dist/`.
 
-```bash
-npm run build
-npm run test:run
-```
+- **Conquest** opens the war table. Neighboring realms are the only roads. A mission is a shrine, two relic wells, and the rival warlord.
+- **Endless survival** throws warbands at you until you fall. Between waves, draft one relic. A warlord arrives every fifth wave.
+- **Forge** spends shards from either mode on permanent seals.
+- Desktop: `WASD` moves relative to the camera (A left, D right). The pointer aims. Click chains a strike, right-click or Shift is a stamina breaker, Space phase-dodges, `Q E R F` are that ruler's rites, `C` calls elites.
+- Touch: drag the stick, then Strike, Break, Dodge, and the rite buttons.
 
-## Visual diagnostics
+Progress stays in this browser (`localStorage`). Mute and reduced motion live in Settings.
 
-- Add `?quality=cinematic`, `?quality=balanced`, or `?quality=battery` to force a rendering tier.
-- Press `P` during battle to toggle the no-post baseline used for visual regression checks.
-- Realm layouts, material variation, particles and environmental motion are seeded from each civilization's catalog entry.
+## What changed in this build
 
-## Mobile builds
+The previous battlefield was one shared kit wearing twenty palettes. This one is a campaign:
+
+- Each ruler has four rites that actually differ: lances, arcs, wards, snares, chains, summons, marks, dashes, meteors, banners, volleys.
+- Conquest is a connected atlas. Beating a realm opens its neighbors. Rematches do not mint a second dominion.
+- Survival drafts a relic after every clear. Rares are in the pool.
+- The crown forge keeps five seals across runs.
+- A first-march manual pauses the opening battle until you skip or finish it.
+
+## Project
+
+- `src/crownfall/` — catalog, battle simulation, diorama stage, UI, audio, save.
+- `src/main.ts` — mounts the game.
+- `android/` and `ios/` — Capacitor shells. Sync after `npm run build`.
+
+## Mobile shells
 
 ```bash
 npm run mobile:sync
@@ -60,4 +43,4 @@ npm run mobile:android
 npm run mobile:ios
 ```
 
-Android release signing is completed in Android Studio. iOS archive/signing requires macOS, Xcode and an Apple Developer team; the generated Xcode project is ready for those credentials.
+Android release signing is done in Android Studio. iOS archive needs macOS, Xcode, and a developer team.
