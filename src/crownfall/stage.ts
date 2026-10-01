@@ -1,157 +1,77 @@
 import * as THREE from "three";
+import { bodyKey, cloneModel, liftColor, realmLibrary, slotName } from "./assets";
 import type { Civilization, EnemyRole, Family, WeaponKind } from "./types";
 
 export interface FigParts {
-  root: THREE.Group;
-  cape: THREE.Mesh;
-  weapon: THREE.Group;
+  root: THREE.Object3D;
+  cape: THREE.Object3D;
+  weapon: THREE.Object3D;
   glow: THREE.MeshStandardMaterial[];
   metals: THREE.MeshStandardMaterial[];
 }
 
-const GEO = {
-  shadow: new THREE.CircleGeometry(0.55, 20),
-  robe: new THREE.CapsuleGeometry(0.28, 0.55, 5, 10),
-  plate: new THREE.BoxGeometry(0.46, 0.32, 0.22),
-  belt: new THREE.TorusGeometry(0.2, 0.035, 6, 14),
-  shoulder: new THREE.SphereGeometry(0.13, 10, 8),
-  head: new THREE.SphereGeometry(0.16, 16, 12),
-  crownBand: new THREE.TorusGeometry(0.15, 0.028, 6, 16),
-  spike: new THREE.ConeGeometry(0.04, 0.22, 5),
-  horn: new THREE.ConeGeometry(0.05, 0.28, 6),
-  halo: new THREE.TorusGeometry(0.26, 0.02, 6, 24),
-  cape: new THREE.PlaneGeometry(0.7, 1.05, 3, 5),
-  shaft: new THREE.CylinderGeometry(0.03, 0.038, 1.35, 7),
-  orb: new THREE.SphereGeometry(0.12, 12, 10),
-  hammer: new THREE.BoxGeometry(0.38, 0.18, 0.18),
-  blade: new THREE.BoxGeometry(0.08, 0.78, 0.03),
-  tip: new THREE.ConeGeometry(0.07, 0.32, 6),
-  gem: new THREE.OctahedronGeometry(0.08, 0),
-  tree: new THREE.ConeGeometry(0.55, 1.6, 6),
-  trunk: new THREE.CylinderGeometry(0.08, 0.1, 0.45, 5),
-  pillar: new THREE.CylinderGeometry(0.18, 0.22, 2.4, 7),
-  rock: new THREE.DodecahedronGeometry(0.45, 0),
-  arch: new THREE.TorusGeometry(0.7, 0.08, 6, 10, Math.PI),
-  banner: new THREE.PlaneGeometry(0.28, 0.7),
-  ring: new THREE.RingGeometry(1.6, 1.72, 48),
-  well: new THREE.CylinderGeometry(0.7, 0.8, 0.35, 10),
-  shrine: new THREE.CylinderGeometry(0.35, 0.5, 1.6, 8),
-  beam: new THREE.CylinderGeometry(0.04, 0.04, 6, 6),
-};
+const burstRing = new THREE.RingGeometry(0.85, 1, 48);
 
-function noiseCanvas(size: number): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const g = canvas.getContext("2d")!;
-  const image = g.createImageData(size, size);
-  for (let i = 0; i < image.data.length; i += 4) {
-    const n = 140 + Math.random() * 115;
-    image.data[i] = n;
-    image.data[i + 1] = n;
-    image.data[i + 2] = n;
-    image.data[i + 3] = 255;
-  }
-  g.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+function findNamed(root: THREE.Object3D, name: string): THREE.Object3D | undefined {
+  let found: THREE.Object3D | undefined;
+  root.traverse((obj) => {
+    if (found) return;
+    const base = obj.name.replace(/\.\d+$/, "");
+    if (base === name) found = obj;
+  });
+  return found;
 }
 
-let sharedRough: THREE.CanvasTexture | null = null;
-
-function roughMap(): THREE.CanvasTexture {
-  if (!sharedRough) sharedRough = noiseCanvas(128);
-  return sharedRough;
-}
-
-function paintGround(civ: Civilization): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 1024;
-  const g = canvas.getContext("2d")!;
-  g.fillStyle = civ.palette.ground;
-  g.fillRect(0, 0, 1024, 1024);
-  for (let i = 0; i < 1800; i += 1) {
-    const x = Math.random() * 1024;
-    const y = Math.random() * 1024;
-    const w = 8 + Math.random() * 40;
-    g.fillStyle = `rgba(255,255,255,${0.015 + Math.random() * 0.04})`;
-    g.fillRect(x, y, w, 2 + Math.random() * 6);
-  }
-  g.strokeStyle = "rgba(198,161,90,0.35)";
-  g.lineWidth = 3;
-  g.beginPath();
-  g.arc(512, 512, 150, 0, Math.PI * 2);
-  g.stroke();
-  g.lineWidth = 1.5;
-  g.beginPath();
-  g.arc(512, 512, 280, 0, Math.PI * 2);
-  g.stroke();
-  for (let i = 0; i < 20; i += 1) {
-    const a = (i / 20) * Math.PI * 2;
-    g.beginPath();
-    g.moveTo(512 + Math.cos(a) * 150, 512 + Math.sin(a) * 150);
-    g.lineTo(512 + Math.cos(a) * 300, 512 + Math.sin(a) * 300);
-    g.stroke();
-  }
-  g.strokeStyle = civ.palette.primary;
-  g.globalAlpha = 0.25;
-  g.lineWidth = 8;
-  g.beginPath();
-  g.arc(512, 512, 90, 0, Math.PI * 2);
-  g.stroke();
-  g.globalAlpha = 1;
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
-
-function paintSky(civ: Civilization): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 256;
-  const g = canvas.getContext("2d")!;
-  const gradient = g.createLinearGradient(0, 0, 0, 256);
-  gradient.addColorStop(0, "#07060c");
-  gradient.addColorStop(0.45, civ.palette.ground);
-  gradient.addColorStop(0.72, civ.palette.primary);
-  gradient.addColorStop(1, "#1a120c");
-  g.fillStyle = gradient;
-  g.fillRect(0, 0, 64, 256);
-  g.fillStyle = "rgba(255,236,190,0.85)";
-  g.beginPath();
-  g.arc(32, 78, 10, 0, Math.PI * 2);
-  g.fill();
-  g.fillStyle = civ.palette.ground;
-  g.beginPath();
-  g.arc(36, 76, 9, 0, Math.PI * 2);
-  g.fill();
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function metal(color: string, emissive = "#000000", intensity = 0): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color,
-    emissive,
-    emissiveIntensity: intensity,
-    metalness: 0.72,
-    roughness: 0.38,
-    roughnessMap: roughMap(),
+function eachMaterial(root: THREE.Object3D, visit: (material: THREE.MeshStandardMaterial, name: string) => void): void {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.material) return;
+    const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    list.forEach((material) => {
+      if (material instanceof THREE.MeshStandardMaterial) visit(material, slotName(material));
+    });
   });
 }
 
-function cloth(color: string): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color,
-    metalness: 0.08,
-    roughness: 0.86,
-    roughnessMap: roughMap(),
-    side: THREE.DoubleSide,
+function tintFigure(root: THREE.Object3D, civ: Civilization, glow: THREE.MeshStandardMaterial[], metals: THREE.MeshStandardMaterial[]): void {
+  eachMaterial(root, (material, name) => {
+    if (name === "Cloth") material.color.set(civ.palette.cloth);
+    else if (name === "Skin") material.color.set("#f2e4d6");
+    else if (name === "Leather") material.color.copy(liftColor(civ.palette.cloth, "#3a2a22", 0.35));
+    else if (name === "Plate") {
+      material.color.set(civ.palette.primary);
+      material.emissive.set(civ.palette.primary);
+      material.emissiveIntensity = 0.08;
+    } else if (name === "Metal") {
+      material.color.set(civ.palette.metal);
+      metals.push(material);
+    } else if (name === "Trim") {
+      material.color.set(civ.palette.glow);
+      material.emissive.set(civ.palette.glow);
+      material.emissiveIntensity = 0.55;
+      glow.push(material);
+    } else if (name === "Wood") {
+      material.color.copy(liftColor(civ.palette.cloth, "#6a4a32", 0.4));
+    }
+  });
+}
+
+function tintPlace(root: THREE.Object3D, civ: Civilization): void {
+  eachMaterial(root, (material, name) => {
+    if (name === "Stone") material.color.copy(liftColor(civ.palette.ground, "#c4b6a4", 0.22));
+    else if (name === "Earth") material.color.copy(liftColor(civ.palette.ground, "#d9cbb8", 0.28));
+    else if (name === "Foliage") material.color.copy(liftColor(civ.palette.primary, "#6f8f45", 0.62));
+    else if (name === "Wood") material.color.copy(liftColor(civ.palette.cloth, "#6d5138", 0.45));
+    else if (name === "Cloth") material.color.set(civ.palette.cloth);
+    else if (name === "Trim") {
+      material.color.set(civ.palette.glow);
+      material.emissive.set(civ.palette.glow);
+      material.emissiveIntensity = 0.7;
+    } else if (name === "Well") {
+      material.color.set(civ.palette.primary);
+      material.emissive.set(civ.palette.primary);
+      material.emissiveIntensity = 0.22;
+    }
   });
 }
 
@@ -160,164 +80,30 @@ export function buildFigurine(
   role: "ruler" | EnemyRole | "boss" | "ally",
   boss = false,
 ): FigParts {
-  const root = new THREE.Group();
-  const glowMats: THREE.MeshStandardMaterial[] = [];
+  const lib = realmLibrary();
+  const key = bodyKey(civ.family, role, boss);
+  const template = lib.bodies.get(key) ?? lib.bodies.get(`${civ.family}_soldier`);
+  if (!template) throw new Error(`Missing realm body ${key}`);
+  const root = cloneModel(template);
+  const weaponTemplate = lib.weapons.get(civ.weapon as WeaponKind) ?? lib.weapons.get("blade");
+  if (!weaponTemplate) throw new Error("Missing realm weapon");
+  const weapon = cloneModel(weaponTemplate);
+  const grip = findNamed(root, "Grip") ?? root;
+  grip.add(weapon);
+  const cape = findNamed(root, "Cape") ?? root;
+  const glow: THREE.MeshStandardMaterial[] = [];
   const metals: THREE.MeshStandardMaterial[] = [];
-  const steel = metal(civ.palette.metal);
-  const trim = metal(civ.palette.glow, civ.palette.glow, 0.55);
-  const plate = metal(civ.palette.primary, civ.palette.primary, 0.18);
-  const robeMat = cloth(civ.palette.cloth);
-  metals.push(steel, plate);
-  glowMats.push(trim);
-
-  const shadow = new THREE.Mesh(
-    GEO.shadow,
-    new THREE.MeshBasicMaterial({ color: "#000000", transparent: true, opacity: 0.35, depthWrite: false }),
-  );
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.02;
-  root.add(shadow);
-
-  const cape = new THREE.Mesh(GEO.cape, robeMat);
-  cape.position.set(0, 0.95, -0.16);
-  root.add(cape);
-
-  const robe = new THREE.Mesh(GEO.robe, robeMat);
-  robe.position.y = 0.85;
-  root.add(robe);
-
-  const breast = new THREE.Mesh(GEO.plate, plate);
-  breast.position.y = 1.05;
-  breast.castShadow = true;
-  root.add(breast);
-
-  const belt = new THREE.Mesh(GEO.belt, steel);
-  belt.position.y = 0.78;
-  belt.rotation.x = Math.PI / 2;
-  root.add(belt);
-
-  const scale = role === "brute" || boss ? 1.15 : role === "skirmisher" || role === "ally" ? 0.82 : role === "mystic" ? 0.9 : 1;
-  [-1, 1].forEach((side) => {
-    const shoulder = new THREE.Mesh(GEO.shoulder, steel);
-    shoulder.position.set(0.28 * side, 1.22, 0);
-    shoulder.scale.setScalar(role === "brute" || boss ? 1.35 : 1);
-    root.add(shoulder);
-  });
-
-  const head = new THREE.Mesh(GEO.head, cloth("#d8c3a5"));
-  head.position.y = 1.48;
-  head.castShadow = true;
-  root.add(head);
-
-  const eye = new THREE.Mesh(GEO.gem, trim);
-  eye.position.set(0, 1.5, 0.12);
-  eye.scale.set(0.35, 0.18, 0.2);
-  root.add(eye);
-
-  crownFor(root, civ.index, steel, trim, boss || role === "ruler");
-
-  const weapon = weaponFor(civ.weapon, steel, trim, plate);
-  weapon.position.set(0.34, 1.05, 0.08);
-  root.add(weapon);
-
-  if (boss) {
-    const halo = new THREE.Mesh(GEO.halo, trim);
-    halo.position.y = 1.78;
-    halo.rotation.x = Math.PI / 2;
-    root.add(halo);
-  }
-
-  root.scale.setScalar(boss ? scale * 1.28 : role === "ruler" ? 1.05 : scale);
+  tintFigure(root, civ, glow, metals);
+  const scale = boss ? 1.34 : role === "brute" ? 1.12 : role === "skirmisher" || role === "ally" ? 0.9 : role === "mystic" ? 0.96 : role === "ruler" ? 1.04 : 1;
+  root.scale.setScalar(scale);
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.isMesh) {
-      mesh.castShadow = mesh.geometry !== GEO.shadow && mesh.geometry !== GEO.cape;
+      mesh.castShadow = true;
       mesh.receiveShadow = true;
     }
   });
-  return { root, cape, weapon, glow: glowMats, metals };
-}
-
-function crownFor(root: THREE.Group, index: number, steel: THREE.Material, trim: THREE.Material, hero: boolean): void {
-  const kind = index % 5;
-  if (!hero && kind !== 0) {
-    const band = new THREE.Mesh(GEO.crownBand, steel);
-    band.position.y = 1.64;
-    band.rotation.x = Math.PI / 2;
-    root.add(band);
-    return;
-  }
-  if (kind === 0 || kind === 1) {
-    const band = new THREE.Mesh(GEO.crownBand, kind === 0 ? trim : steel);
-    band.position.y = 1.64;
-    band.rotation.x = Math.PI / 2;
-    root.add(band);
-    for (let i = 0; i < 5; i += 1) {
-      const spike = new THREE.Mesh(GEO.spike, trim);
-      const a = (i / 5) * Math.PI * 2;
-      spike.position.set(Math.cos(a) * 0.13, 1.74, Math.sin(a) * 0.13);
-      root.add(spike);
-    }
-  } else if (kind === 2) {
-    [-1, 1].forEach((side) => {
-      const horn = new THREE.Mesh(GEO.horn, steel);
-      horn.position.set(0.12 * side, 1.62, 0);
-      horn.rotation.z = -0.7 * side;
-      root.add(horn);
-    });
-  } else if (kind === 3) {
-    const halo = new THREE.Mesh(GEO.halo, trim);
-    halo.position.y = 1.72;
-    halo.rotation.x = Math.PI / 2.4;
-    root.add(halo);
-  } else {
-    const hood = new THREE.Mesh(GEO.head, clothShade(trim));
-    hood.position.y = 1.55;
-    hood.scale.set(1.25, 1.35, 1.2);
-    root.add(hood);
-  }
-}
-
-function clothShade(source: THREE.Material): THREE.Material {
-  const color = (source as THREE.MeshStandardMaterial).color?.clone() ?? new THREE.Color("#222");
-  return cloth(`#${color.getHexString()}`);
-}
-
-function weaponFor(kind: WeaponKind, steel: THREE.Material, trim: THREE.Material, plate: THREE.Material): THREE.Group {
-  const group = new THREE.Group();
-  if (kind === "hammer") {
-    const shaft = new THREE.Mesh(GEO.shaft, steel);
-    shaft.scale.set(0.8, 0.85, 0.8);
-    const head = new THREE.Mesh(GEO.hammer, plate);
-    head.position.y = 0.62;
-    group.add(shaft, head);
-  } else if (kind === "blade" || kind === "glaive") {
-    const shaft = new THREE.Mesh(GEO.shaft, steel);
-    shaft.scale.set(0.45, 0.35, 0.45);
-    shaft.position.y = -0.15;
-    const blade = new THREE.Mesh(GEO.blade, trim);
-    blade.position.y = 0.35;
-    blade.scale.x = kind === "glaive" ? 1.4 : 1;
-    group.add(shaft, blade);
-  } else if (kind === "spear") {
-    const shaft = new THREE.Mesh(GEO.shaft, steel);
-    shaft.scale.y = 1.25;
-    const tip = new THREE.Mesh(GEO.tip, trim);
-    tip.position.y = 0.95;
-    group.add(shaft, tip);
-  } else if (kind === "orb") {
-    const shaft = new THREE.Mesh(GEO.shaft, steel);
-    shaft.scale.set(0.7, 0.7, 0.7);
-    const orb = new THREE.Mesh(GEO.orb, trim);
-    orb.position.y = 0.62;
-    group.add(shaft, orb);
-  } else {
-    const shaft = new THREE.Mesh(GEO.shaft, steel);
-    const gem = new THREE.Mesh(GEO.gem, trim);
-    gem.position.y = 0.78;
-    group.add(shaft, gem);
-  }
-  return group;
+  return { root, cape, weapon, glow, metals };
 }
 
 export function poseFigurine(parts: FigParts, time: number, moving: boolean, action: string, actionAge: number): void {
@@ -344,7 +130,6 @@ export class RealmStage {
   readonly renderer: THREE.WebGLRenderer;
   readonly player: FigParts;
   private readonly owned: THREE.Material[] = [];
-  private readonly ownedTex: THREE.Texture[] = [];
   private readonly clockOffset = Math.random() * 10;
   shrineGlow: THREE.MeshStandardMaterial | null = null;
   wellMats: THREE.MeshStandardMaterial[] = [];
@@ -361,13 +146,15 @@ export class RealmStage {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setClearColor(civ.palette.ground, 1);
 
-    const skyTex = paintSky(civ);
-    this.ownedTex.push(skyTex);
-    const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(70, 24, 16),
-      new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false }),
-    );
-    this.scene.add(sky);
+    const skyTex = realmLibrary().sky;
+    const skyMat = new THREE.MeshBasicMaterial({
+      map: skyTex,
+      color: liftColor(civ.palette.primary, "#efe6da", 0.72),
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    this.owned.push(skyMat);
+    this.scene.add(new THREE.Mesh(new THREE.SphereGeometry(70, 28, 18), skyMat));
 
     const hemi = new THREE.HemisphereLight(civ.palette.glow, civ.palette.ground, 0.7);
     this.scene.add(hemi);
@@ -400,121 +187,119 @@ export class RealmStage {
   }
 
   private buildTerrain(civ: Civilization): void {
-    const geo = new THREE.PlaneGeometry(46, 46, 48, 48);
-    geo.rotateX(-Math.PI / 2);
-    const pos = geo.attributes.position;
-    if (!pos) return;
-    for (let i = 0; i < pos.count; i += 1) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const d = Math.hypot(x, z);
-      const n = Math.sin(x * 0.35) * Math.cos(z * 0.28) * 0.35 + Math.sin(x * 0.9 + z) * 0.08;
-      const flatten = THREE.MathUtils.smoothstep(d, 8, 16);
-      const rim = THREE.MathUtils.smoothstep(d, 15, 21) * 1.6;
-      pos.setY(i, n * flatten + rim);
-    }
-    geo.computeVertexNormals();
-    const map = paintGround(civ);
-    this.ownedTex.push(map);
-    const mat = new THREE.MeshStandardMaterial({ map, roughness: 0.92, metalness: 0.08, roughnessMap: roughMap() });
-    this.owned.push(mat);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = true;
-    this.scene.add(mesh);
-
-    const ring = new THREE.Mesh(
-      GEO.ring,
-      new THREE.MeshBasicMaterial({ color: "#c6a15a", transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.05;
-    ring.scale.setScalar(1.15);
-    this.scene.add(ring);
+    const template = realmLibrary().props.get("terrain");
+    if (!template) return;
+    const terrain = cloneModel(template);
+    tintPlace(terrain, civ);
+    terrain.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.receiveShadow = true;
+        mesh.castShadow = false;
+      }
+    });
+    this.scene.add(terrain);
   }
 
   private dress(family: Family, civ: Civilization): void {
-    const stone = metal(civ.palette.metal);
-    const leaf = cloth(civ.palette.primary);
-    this.owned.push(stone, leaf);
-    const count = family === "grove" ? 16 : 10;
-    for (let i = 0; i < count; i += 1) {
-      const a = (i / count) * Math.PI * 2 + 0.2;
-      const r = 11.5 + (i % 3) * 0.8;
-      const group = new THREE.Group();
-      group.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
-      group.rotation.y = -a;
-      if (family === "grove") {
-        const trunk = new THREE.Mesh(GEO.trunk, stone);
-        trunk.position.y = 0.22;
-        const top = new THREE.Mesh(GEO.tree, leaf);
-        top.position.y = 1.15;
-        group.add(trunk, top);
-      } else if (family === "basilica") {
-        const arch = new THREE.Mesh(GEO.arch, stone);
-        arch.position.y = 0.7;
-        const banner = new THREE.Mesh(GEO.banner, cloth(civ.palette.glow));
-        banner.position.set(0, 0.85, 0.05);
-        group.add(arch, banner);
-      } else if (family === "foundry") {
-        const stack = new THREE.Mesh(GEO.pillar, stone);
-        stack.scale.set(0.7, 0.8, 0.7);
-        stack.position.y = 0.9;
-        const rock = new THREE.Mesh(GEO.rock, stone);
-        rock.position.set(0.5, 0.25, 0.2);
-        group.add(stack, rock);
-      } else if (family === "observatory") {
-        const pillar = new THREE.Mesh(GEO.pillar, stone);
-        pillar.scale.set(0.45, 1, 0.45);
-        pillar.position.y = 1.2;
-        const ring = new THREE.Mesh(GEO.halo, metal(civ.palette.glow, civ.palette.glow, 0.4));
-        ring.position.y = 2.3;
-        ring.rotation.x = Math.PI / 2;
-        group.add(pillar, ring);
-      } else {
-        const stoneMesh = new THREE.Mesh(GEO.pillar, stone);
-        stoneMesh.scale.set(0.55, 0.7 + (i % 3) * 0.15, 0.35);
-        stoneMesh.position.y = 0.8;
-        group.add(stoneMesh);
-      }
-      group.traverse((obj) => {
+    const rand = mulberry(civ.index * 97 + family.length * 13);
+    const sites: Record<Family, ReadonlyArray<readonly [string, number, number]>> = {
+      grove: [
+        ["tree", -12.4, 7.1], ["tree_b", -10.2, 9.6], ["tree", -13.8, 4.4], ["roots", -8.6, 8.2],
+        ["tree", 13.2, -5.4], ["tree_b", 11.4, -8.8], ["boulder", 7.8, 11.6], ["boulder", -5.5, -13.2],
+        ["tuft", 4.2, 10.4], ["tuft", -3.1, -10.6], ["tuft", 10.2, 3.6], ["roots", 5.4, -12.1],
+        ["tuft", -14.2, -2.4],
+      ],
+      basilica: [
+        ["arch", -11.6, 6.8], ["arch", 12.4, 4.2], ["arch", 8.8, -11.5], ["banner", -9.2, -6.4],
+        ["banner", 4.6, 12.8], ["cairn", -6.8, 12.2], ["cairn", 13.6, -2.2], ["boulder_b", -13.4, -6.6],
+        ["boulder_b", 2.8, -13.4], ["tuft", 6.2, 8.4], ["tuft", -4.4, -8.8],
+      ],
+      foundry: [
+        ["stack", -12.2, 5.5], ["stack", 11.8, -7.4], ["stack", 6.4, 12.6], ["boulder", -8.4, -11.2],
+        ["boulder", 13.5, 3.2], ["boulder", -4.6, 13.4], ["cairn", 9.2, 8.8], ["boulder_b", -13.8, -1.4],
+        ["boulder_b", 3.4, -12.2],
+      ],
+      observatory: [
+        ["spire", -10.8, 8.4], ["spire", 13.2, -3.6], ["spire", 5.5, -13.1], ["spire", -14.2, -4.8],
+        ["boulder", 9.4, 10.2], ["cairn", -6.2, -12.4], ["cairn", 12.6, 7.4], ["tuft", -3.8, 11.2],
+        ["tuft", 7.2, -8.6],
+      ],
+      monolith: [
+        ["monolith", -11.4, 6.2], ["monolith", -13.6, -2.8], ["monolith", 10.8, 9.4], ["monolith", 12.6, -6.6],
+        ["monolith", 4.2, -13.6], ["cairn", -7.4, -11.8], ["cairn", 8.2, -10.4], ["boulder", -5.2, 13.2],
+        ["boulder_b", 14.1, 1.6], ["boulder_b", -9.6, 11.4],
+      ],
+    };
+    sites[family].forEach(([name, x, z]) => {
+      const template = realmLibrary().props.get(name);
+      if (!template) return;
+      const prop = cloneModel(template);
+      const jx = (rand() - 0.5) * 1.6;
+      const jz = (rand() - 0.5) * 1.6;
+      prop.position.set(x + jx, -0.08 - rand() * 0.18, z + jz);
+      prop.rotation.y = rand() * Math.PI * 2;
+      prop.rotation.z = (rand() - 0.5) * 0.18;
+      prop.rotation.x = (rand() - 0.5) * 0.14;
+      prop.scale.set(0.75 + rand() * 0.55, 0.7 + rand() * 0.6, 0.75 + rand() * 0.5);
+      tintPlace(prop, civ);
+      prop.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.isMesh) {
           mesh.castShadow = !this.reduced;
           mesh.receiveShadow = true;
         }
       });
-      this.scene.add(group);
-    }
+      this.scene.add(prop);
+    });
   }
 
   private placeObjectives(civ: Civilization): void {
-    const shrineMat = metal(civ.palette.glow, civ.palette.glow, 0.8);
-    this.shrineGlow = shrineMat;
-    this.owned.push(shrineMat);
-    const shrine = new THREE.Mesh(GEO.shrine, shrineMat);
-    shrine.position.set(0, 0.8, 0);
-    shrine.castShadow = true;
-    const cap = new THREE.Mesh(GEO.gem, shrineMat);
-    cap.position.set(0, 1.8, 0);
-    cap.scale.setScalar(2.2);
-    const beam = new THREE.Mesh(
-      GEO.beam,
-      new THREE.MeshBasicMaterial({ color: civ.palette.glow, transparent: true, opacity: 0.18, depthWrite: false }),
-    );
-    beam.position.set(0, 3.2, 0);
-    this.scene.add(shrine, cap, beam);
-
+    const lib = realmLibrary();
+    const shrineSrc = lib.props.get("shrine");
+    if (shrineSrc) {
+      const shrine = cloneModel(shrineSrc);
+      tintPlace(shrine, civ);
+      shrine.position.set(0, 0, 0);
+      shrine.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = !this.reduced;
+          mesh.receiveShadow = true;
+        }
+      });
+      eachMaterial(shrine, (material, name) => {
+        if (name === "Trim" && !this.shrineGlow) this.shrineGlow = material;
+      });
+      this.scene.add(shrine);
+    }
+    const wellSrc = lib.props.get("well");
     [[-7, 4.6], [7.2, -3.8]].forEach(([x, z]) => {
-      const mat = metal(civ.palette.primary, civ.palette.primary, 0.25);
-      this.wellMats.push(mat);
-      this.owned.push(mat);
-      const well = new THREE.Mesh(GEO.well, mat);
-      well.position.set(x!, 0.18, z!);
-      const marker = new THREE.Mesh(GEO.beam, new THREE.MeshBasicMaterial({
-        color: civ.palette.primary, transparent: true, opacity: 0.14, depthWrite: false,
-      }));
-      marker.position.set(x!, 3, z!);
-      this.scene.add(well, marker);
+      if (!wellSrc) return;
+      const well = cloneModel(wellSrc);
+      tintPlace(well, civ);
+      well.position.set(x, 0, z);
+      well.rotation.y = x;
+      let found = false;
+      eachMaterial(well, (material, name) => {
+        if (name === "Well" && !found) {
+          this.wellMats.push(material);
+          found = true;
+        }
+      });
+      if (!found) {
+        const dummy = new THREE.MeshStandardMaterial({ emissive: civ.palette.primary });
+        this.wellMats.push(dummy);
+        this.owned.push(dummy);
+      }
+      well.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = !this.reduced;
+          mesh.receiveShadow = true;
+        }
+      });
+      this.scene.add(well);
     });
   }
 
@@ -540,7 +325,7 @@ export class RealmStage {
 
   burst(x: number, z: number, color: string, scale = 1): void {
     const mesh = new THREE.Mesh(
-      GEO.ring,
+      burstRing,
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }),
     );
     mesh.rotation.x = -Math.PI / 2;
@@ -622,6 +407,15 @@ export class RealmStage {
       });
     });
     this.renderer.dispose();
-    this.ownedTex.forEach((tex) => tex.dispose());
   }
+}
+
+function mulberry(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
